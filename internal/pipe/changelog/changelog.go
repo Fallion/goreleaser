@@ -179,12 +179,14 @@ func getChangelog(tag string) (string, error) {
 	if isSHA1(prev) {
 		return gitLog(prev, tag)
 	}
-	return gitLog(fmt.Sprintf("tags/%s..tags/%s", prev, tag))
+	return gitLog(prev, tag)
 }
 
 func gitLog(refs ...string) (string, error) {
-	var args = []string{"log", "--pretty=oneline", "--abbrev-commit", "--no-decorate", "--no-color"}
+	fmt.Print(refs)
+	var args = []string{"cherry", "--abbrev=0", "-v"}
 	args = append(args, refs...)
+	fmt.Print(args)
 	return git.Run(args...)
 }
 
