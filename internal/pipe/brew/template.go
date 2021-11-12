@@ -3,31 +3,30 @@ package brew
 import "github.com/goreleaser/goreleaser/pkg/config"
 
 type templateData struct {
-	Name             string
-	Desc             string
-	Homepage         string
-	Version          string
-	License          string
-	Caveats          []string
-	Plist            string
-	DownloadStrategy string
-	Install          []string
-	PostInstall      string
-	Dependencies     []config.HomebrewDependency
-	Conflicts        []string
-	Tests            []string
-	CustomRequire    string
-	CustomBlock      []string
-	MacOSAmd64       downloadable
-	MacOSArm64       downloadable
-	LinuxAmd64       downloadable
-	LinuxArm         downloadable
-	LinuxArm64       downloadable
+	Name          string
+	Desc          string
+	Homepage      string
+	Version       string
+	License       string
+	Caveats       []string
+	Plist         string
+	PostInstall   string
+	Dependencies  []config.HomebrewDependency
+	Conflicts     []string
+	Tests         []string
+	CustomRequire string
+	CustomBlock   []string
+	LinuxPackages []releasePackage
+	MacOSPackages []releasePackage
 }
 
-type downloadable struct {
-	DownloadURL string
-	SHA256      string
+type releasePackage struct {
+	DownloadURL      string
+	SHA256           string
+	OS               string
+	Arch             string
+	DownloadStrategy string
+	Install          []string
 }
 
 const formulaTemplate = `# typed: false
@@ -41,50 +40,77 @@ class {{ .Name }} < Formula
   desc "{{ .Desc }}"
   homepage "{{ .Homepage }}"
   version "{{ .Version }}"
-  {{ if .License -}}
+  {{- if .License }}
   license "{{ .License }}"
-  {{ end -}}
-  bottle :unneeded
-  {{- if and (not .MacOSAmd64.DownloadURL) (not .MacOSArm64.DownloadURL) (or .LinuxAmd64.DownloadURL .LinuxArm.DownloadURL .LinuxArm64.DownloadURL) }}
+  {{- end }}
+  {{- if and (not .LinuxPackages) .MacOSPackages }}
+  depends_on :macos
+  {{- end }}
+  {{- if and (not .MacOSPackages) .LinuxPackages }}
   depends_on :linux
   {{- end }}
   {{- printf "\n" }}
-  {{- if .MacOSAmd64.DownloadURL }}
-  if OS.mac? && Hardware::CPU.intel?
-    url "{{ .MacOSAmd64.DownloadURL }}"
+
+  {{- if .MacOSPackages }}
+  on_macos do
+  {{- range $element := .MacOSPackages }}
+    {{- if eq $element.Arch "all" }}
+    url "{{ $element.DownloadURL }}"
     {{- if .DownloadStrategy }}, :using => {{ .DownloadStrategy }}{{- end }}
-    sha256 "{{ .MacOSAmd64.SHA256 }}"
-  end
+    sha256 "{{ $element.SHA256 }}"
+
+    def install
+      {{- range $index, $element := .Install }}
+      {{ . -}}
+      {{- end }}
+    end
+    {{- else }}
+    {{- if eq $element.Arch "amd64" }}
+    if Hardware::CPU.intel?
+    {{- end }}
+    {{- if eq $element.Arch "arm64" }}
+    if Hardware::CPU.arm?
+    {{- end}}
+      url "{{ $element.DownloadURL }}"
+      {{- if .DownloadStrategy }}, :using => {{ .DownloadStrategy }}{{- end }}
+      sha256 "{{ $element.SHA256 }}"
+
+      def install
+        {{- range $index, $element := .Install }}
+        {{ . -}}
+        {{- end }}
+      end
+    end
+    {{- end }}
   {{- end }}
-  {{- if .MacOSArm64.DownloadURL }}
-  if OS.mac? && Hardware::CPU.arm?
-    url "{{ .MacOSArm64.DownloadURL }}"
-    {{- if .DownloadStrategy }}, :using => {{ .DownloadStrategy }}{{- end }}
-    sha256 "{{ .MacOSArm64.SHA256 }}"
   end
   {{- end }}
 
-  {{- if .LinuxAmd64.DownloadURL }}
-  if OS.linux? && Hardware::CPU.intel?
-    url "{{ .LinuxAmd64.DownloadURL }}"
-    {{- if .DownloadStrategy }}, :using => {{ .DownloadStrategy }}{{- end }}
-    sha256 "{{ .LinuxAmd64.SHA256 }}"
-  end
-  {{- end }}
+  {{- if and .MacOSPackages .LinuxPackages }}{{ printf "\n" }}{{ end }}
 
-  {{- if .LinuxArm.DownloadURL }}
-  if OS.linux? && Hardware::CPU.arm? && !Hardware::CPU.is_64_bit?
-    url "{{ .LinuxArm.DownloadURL }}"
-    {{- if .DownloadStrategy }}, :using => {{ .DownloadStrategy }}{{- end }}
-    sha256 "{{ .LinuxArm.SHA256 }}"
-  end
-  {{- end }}
+  {{- if .LinuxPackages }}
+  on_linux do
+  {{- range $element := .LinuxPackages }}
+    {{- if eq $element.Arch "amd64" }}
+    if Hardware::CPU.intel?
+    {{- end }}
+    {{- if eq $element.Arch "arm" }}
+    if Hardware::CPU.arm? && !Hardware::CPU.is_64_bit?
+    {{- end }}
+    {{- if eq $element.Arch "arm64" }}
+    if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
+    {{- end }}
+      url "{{ $element.DownloadURL }}"
+      {{- if .DownloadStrategy }}, :using => {{ .DownloadStrategy }}{{- end }}
+      sha256 "{{ $element.SHA256 }}"
 
-  {{- if .LinuxArm64.DownloadURL }}
-  if OS.linux? && Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-    url "{{ .LinuxArm64.DownloadURL }}"
-    {{- if .DownloadStrategy }}, :using => {{ .DownloadStrategy }}{{- end }}
-    sha256 "{{ .LinuxArm64.SHA256 }}"
+      def install
+        {{- range $index, $element := .Install }}
+        {{ . -}}
+        {{- end }}
+      end
+    end
+  {{- end }}
   end
   {{- end }}
 
@@ -106,12 +132,6 @@ class {{ .Name }} < Formula
   conflicts_with "{{ . }}"
   {{- end }}
   {{- end }}
-
-  def install
-    {{- range $index, $element := .Install }}
-    {{ . -}}
-    {{- end }}
-  end
 
   {{- with .PostInstall }}
 

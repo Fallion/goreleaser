@@ -13,6 +13,7 @@ import (
 
 	"github.com/apex/log"
 	"github.com/caarlos0/go-shellwords"
+	"github.com/goreleaser/goreleaser/internal/gio"
 	"github.com/goreleaser/goreleaser/internal/ids"
 	"github.com/goreleaser/goreleaser/internal/logext"
 	"github.com/goreleaser/goreleaser/internal/semerrgroup"
@@ -69,8 +70,8 @@ func (Pipe) Default(ctx *context.Context) error {
 }
 
 func buildWithDefaults(ctx *context.Context, build config.Build) (config.Build, error) {
-	if build.Lang == "" {
-		build.Lang = "go"
+	if build.Builder == "" {
+		build.Builder = "go"
 	}
 	if build.Binary == "" {
 		build.Binary = ctx.Config.ProjectName
@@ -81,7 +82,7 @@ func buildWithDefaults(ctx *context.Context, build config.Build) (config.Build, 
 	for k, v := range build.Env {
 		build.Env[k] = os.ExpandEnv(v)
 	}
-	return builders.For(build.Lang).WithDefaults(build)
+	return builders.For(build.Builder).WithDefaults(build)
 }
 
 func runPipeOnBuild(ctx *context.Context, build config.Build) error {
@@ -113,7 +114,7 @@ func runPipeOnBuild(ctx *context.Context, build config.Build) error {
 	return g.Wait()
 }
 
-func runHook(ctx *context.Context, opts builders.Options, buildEnv []string, hooks config.BuildHooks) error {
+func runHook(ctx *context.Context, opts builders.Options, buildEnv []string, hooks config.Hooks) error {
 	if len(hooks) == 0 {
 		return nil
 	}
@@ -159,24 +160,35 @@ func runHook(ctx *context.Context, opts builders.Options, buildEnv []string, hoo
 }
 
 func doBuild(ctx *context.Context, build config.Build, opts builders.Options) error {
-	return builders.For(build.Lang).Build(ctx, build, opts)
+	return builders.For(build.Builder).Build(ctx, build, opts)
 }
 
 func buildOptionsForTarget(ctx *context.Context, build config.Build, target string) (*builders.Options, error) {
 	ext := extFor(target, build.Flags)
-	var goos string
-	var goarch string
+	parts := strings.Split(target, "_")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("%s is not a valid build target", target)
+	}
 
-	if strings.Contains(target, "_") {
-		goos = strings.Split(target, "_")[0]
-		goarch = strings.Split(target, "_")[1]
+	goos := parts[0]
+	goarch := parts[1]
+
+	var gomips string
+	var goarm string
+	if strings.HasPrefix(goarch, "arm") && len(parts) > 2 {
+		goarm = parts[2]
+	}
+	if strings.HasPrefix(goarch, "mips") && len(parts) > 2 {
+		gomips = parts[2]
 	}
 
 	buildOpts := builders.Options{
 		Target: target,
 		Ext:    ext,
-		Os:     goos,
-		Arch:   goarch,
+		Goos:   goos,
+		Goarch: goarch,
+		Goarm:  goarm,
+		Gomips: gomips,
 	}
 
 	binary, err := tmpl.New(ctx).WithBuildOptions(buildOpts).Apply(build.Binary)
@@ -186,20 +198,18 @@ func buildOptionsForTarget(ctx *context.Context, build config.Build, target stri
 
 	build.Binary = binary
 	name := build.Binary + ext
-	path, err := filepath.Abs(
-		filepath.Join(
-			ctx.Config.Dist,
-			fmt.Sprintf("%s_%s", build.ID, target),
-			name,
-		),
-	)
+	dir := fmt.Sprintf("%s_%s", build.ID, target)
+	if build.NoUniqueDistDir {
+		dir = ""
+	}
+	path, err := filepath.Abs(filepath.Join(ctx.Config.Dist, dir, name))
 	if err != nil {
 		return nil, err
 	}
-
-	log.WithField("binary", path).Info("building")
-	buildOpts.Name = name
 	buildOpts.Path = path
+	buildOpts.Name = name
+
+	log.WithField("binary", buildOpts.Path).Info("building")
 	return &buildOpts, nil
 }
 
@@ -222,19 +232,23 @@ func extFor(target string, flags config.FlagArray) string {
 }
 
 func run(ctx *context.Context, dir string, command, env []string) error {
+	fields := log.Fields{
+		"cmd": command,
+		"env": env,
+	}
 	/* #nosec */
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
-	entry := log.WithField("cmd", command)
 	cmd.Env = env
 	var b bytes.Buffer
-	cmd.Stderr = io.MultiWriter(logext.NewErrWriter(entry), &b)
-	cmd.Stdout = io.MultiWriter(logext.NewWriter(entry), &b)
+	w := gio.Safe(&b)
+	cmd.Stderr = io.MultiWriter(logext.NewWriter(fields, logext.Error), w)
+	cmd.Stdout = io.MultiWriter(logext.NewWriter(fields, logext.Info), w)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	entry.WithField("env", env).Debug("running")
+	log.WithFields(fields).Debug("running")
 	if err := cmd.Run(); err != nil {
-		entry.WithError(err).Debug("failed")
+		log.WithFields(fields).WithError(err).Debug("failed")
 		return fmt.Errorf("%q: %w", b.String(), err)
 	}
 	return nil

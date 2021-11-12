@@ -1,6 +1,4 @@
----
-title: Deprecation notices
----
+# Deprecation notices
 
 This page is used to list deprecation notices across GoReleaser.
 
@@ -15,14 +13,77 @@ goreleaser check
 
 ## Active deprecation notices
 
-### Skipping SemVer Validations
+<!--
 
-> since 2021-02-28 (v0.158.0)
+Template for new deprecations:
 
-GoReleaser skips SemVer validations when run with `--skip-validations` or `--snapshot`.
-This causes other problems later, such as [invalid Linux packages](https://github.com/goreleaser/goreleaser/issues/2081).
-Because of that, once this deprecation expires, GoReleaser will hard fail on non-semver versions, as stated on our
-[limitations page](https://goreleaser.com/limitations/semver/).
+### property
+
+> since yyyy-mm-dd
+
+Description.
+
+=== "Before"
+
+    ``` yaml
+    foo: bar
+    ```
+
+=== "After"
+    ``` yaml
+    foo: bar
+    ```
+
+-->
+
+### godownloader
+
+> since 2021-10-13
+
+GoDownloader, the install script generator, wasn't been updated for a long time and is now officially deprecated.
+The website and all install scripts will be taken out in 6 months.
+You can still use any of the other install methods.
+
+### builds for windows/arm64
+
+> since 2021-08-16 (v0.175.0)
+
+Since Go 1.17, `windows/arm64` is a valid target.
+
+Prior to v0.175.0, GoReleaser would just ignore this target.
+Since in Go 1.17 it is now a valid target, GoReleaser will build it if the Go version being used is 1.17 or later.
+
+If you want to make sure it is ignored in the future, you need to add this to your build config:
+
+```yaml
+ignore:
+- goos: windows
+  goarch: arm64
+```
+
+If you try to use new versions of GoReleaser with Go 1.16 or older, it will warn about it until this deprecation warning expires, after that your build will likely fail.
+
+### docker.use_buildx
+
+> since 2021-06-26 (v0.172.0)
+
+`use_buildx` is deprecated in favor of the more generalist `use`, since now it also allow other options in the future:
+
+Change this:
+
+=== "Before"
+    ```yaml
+    dockers:
+      -
+        use_buildx: true
+    ```
+
+=== "After"
+    ```yaml
+    dockers:
+      -
+        use: buildx
+    ```
 
 ### builds for darwin/arm64
 
@@ -30,8 +91,8 @@ Because of that, once this deprecation expires, GoReleaser will hard fail on non
 
 Since Go 1.16, `darwin/arm64` is macOS on Apple Silicon instead of `iOS`.
 
-Prior to v0.156.0, GoReleaser would just ignore this target, but since in Go 1.16 it is a valid target, GoReleaser will
-now build it if the Go version being used is 1.16.
+Prior to v0.156.0, GoReleaser would just ignore this target.
+Since in Go 1.16 and later it is a valid target, GoReleaser will now build it if the Go version being used is 1.16 or later.
 
 If you want to make sure it is ignored in the future, you need to add this to your build config:
 
@@ -41,11 +102,23 @@ ignore:
   goarch: arm64
 ```
 
-If you try to use new versions of GoReleaser with Go 1.15, it will warn about it until this deprecation warning expires.
+If you try to use new versions of GoReleaser with Go 1.15 or older, it will warn about it until this deprecation warning expires, after that your build will likely fail.
+
+## Expired deprecation notices
+
+The following options were deprecated in the past and were already removed.
+
+### Skipping SemVer Validations
+
+> since 2021-02-28 (v0.158.0), removed 2021-09-22 (v0.180.0)
+
+GoReleaser skips SemVer validations when run with `--skip-validation` or `--snapshot`.
+This causes other problems later, such as [invalid Linux packages](https://github.com/goreleaser/goreleaser/issues/2081).
+Because of that, once this deprecation expires, GoReleaser will hard fail on non-semver versions, as stated on our [limitations page](https://goreleaser.com/limitations/semver/).
 
 ### docker.builds
 
-> since 2021-01-07 (v0.154.0)
+> since 2021-01-07 (v0.154.0), removed 2021-08-13 (v0.175.0)
 
 `builds` is deprecated in favor of `ids`, since now it also allows to copy nfpm packages:
 
@@ -67,7 +140,7 @@ Change this:
 
 ### docker.binaries
 
-> since 2021-01-07 (v0.154.0)
+> since 2021-01-07 (v0.154.0), removed 2021-08-13 (v0.175.0)
 
 `binaries` is deprecated and now does nothing.
 If you want to filter something out, use the `ids` property.
@@ -90,7 +163,7 @@ Change this:
 
 ### nfpms.files
 
-> since 2020-12-21 (v0.149.0)
+> since 2020-12-21 (v0.149.0), removed 2021-07-26 (v0.172.0)
 
 `files` is deprecated in favor of `contents` (check [this page](https://goreleaser.com/customization/nfpm/) for more details):
 
@@ -115,7 +188,7 @@ Change this:
 
 ### nfpms.config_files
 
-> since 2020-12-21 (v0.149.0)
+> since 2020-12-21 (v0.149.0), removed 2021-07-26 (v0.172.0)
 
 `config_files` is deprecated in favor of `contents` (check [this page](https://goreleaser.com/customization/nfpm/) for more details):
 
@@ -141,7 +214,7 @@ Change this:
 
 ### nfpms.symlinks
 
-> since 2020-12-21 (v0.149.0)
+> since 2020-12-21 (v0.149.0), removed 2021-07-26 (v0.172.0)
 
 `symlinks` is deprecated in favor of `contents` (check [this page](https://goreleaser.com/customization/nfpm/) for more details):
 
@@ -167,7 +240,7 @@ Change this:
 
 ### nfpms.rpm.ghost_files
 
-> since 2020-12-21 (v0.149.0)
+> since 2020-12-21 (v0.149.0), removed 2021-07-26 (v0.172.0)
 
 `rpm.ghost_files` is deprecated in favor of `contents` (check [this page](https://goreleaser.com/customization/nfpm/) for more details):
 
@@ -194,7 +267,7 @@ Change this:
 
 ### nfpms.rpm.config_noreplace_files
 
-> since 2020-12-21 (v0.149.0)
+> since 2020-12-21 (v0.149.0), removed 2021-07-26 (v0.172.0)
 
 `rpm.config_noreplace_files` is deprecated in favor of `contents` (check [this page](https://goreleaser.com/customization/nfpm/) for more details):
 
@@ -223,7 +296,7 @@ Change this:
 
 ### nfpms.deb.version_metadata
 
-> since 2020-12-21 (v0.149.0)
+> since 2020-12-21 (v0.149.0), removed 2021-07-26 (v0.172.0)
 
 `deb.version_metadata` is deprecated in favor of `version_metadata` (check [this page](https://goreleaser.com/customization/nfpm/) for more details):
 
@@ -243,33 +316,6 @@ Change this:
       -
         version_metadata: beta1
     ```
-
-<!--
-
-Template for new deprecations:
-
-### property
-
-> since yyyy-mm-dd
-
-Description.
-
-=== "Before"
-
-    ``` yaml
-    foo: bar
-    ```
-
-=== "After"
-    ``` yaml
-    foo: bar
-    ```
-
--->
-
-## Expired deprecation notices
-
-The following options were deprecated in the past and were already removed.
 
 ### brews.github
 

@@ -7,22 +7,24 @@ on:
     paths:
       - '.github/workflows/htmltest.yml'
       - 'www/*'
-  pull_request: {}
+  pull_request:
+    paths:
+      - '.github/workflows/htmltest.yml'
+      - 'www/*'
 
 jobs:
   htmltest:
     runs-on: ubuntu-latest
     steps:
-      -
-        name: Checkout
-        uses: actions/checkout@v2.3.4
-      -
-        name: build
-        run: |
-          docker run --rm -v ${PWD}/www:/docs squidfunk/mkdocs-material build
-      -
-        name: htmltest
-        run: |
-          cd www
-          curl https://htmltest.wjdp.uk | bash
-          ./bin/htmltest -c htmltest.yml
+      - uses: actions/checkout@v2
+      - uses: arduino/setup-task@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-go@v2
+        with:
+          go-version: 1.17
+      - run: task docs:build
+      - uses: wjdp/htmltest-action@master
+        with:
+          path: www/site
+          config: www/htmltest.yml

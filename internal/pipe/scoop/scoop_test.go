@@ -2,22 +2,18 @@ package scoop
 
 import (
 	ctx "context"
-	"flag"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/goreleaser/goreleaser/internal/artifact"
 	"github.com/goreleaser/goreleaser/internal/client"
-	"github.com/goreleaser/goreleaser/internal/pipe"
+	"github.com/goreleaser/goreleaser/internal/golden"
 	"github.com/goreleaser/goreleaser/internal/testlib"
 	"github.com/goreleaser/goreleaser/pkg/config"
 	"github.com/goreleaser/goreleaser/pkg/context"
 	"github.com/stretchr/testify/require"
 )
-
-var update = flag.Bool("update", false, "update .golden files")
 
 func TestDescription(t *testing.T) {
 	require.NotEmpty(t, Pipe{}.String())
@@ -26,7 +22,7 @@ func TestDescription(t *testing.T) {
 func TestDefault(t *testing.T) {
 	testlib.Mktmp(t)
 
-	var ctx = &context.Context{
+	ctx := &context.Context{
 		TokenType: context.TokenTypeGitHub,
 		Config: config.Project{
 			ProjectName: "barr",
@@ -60,31 +56,39 @@ func TestDefault(t *testing.T) {
 }
 
 func Test_doRun(t *testing.T) {
-	var folder = testlib.Mktmp(t)
-	var file = filepath.Join(folder, "archive")
-	require.NoError(t, ioutil.WriteFile(file, []byte("lorem ipsum"), 0644))
+	folder := testlib.Mktmp(t)
+	file := filepath.Join(folder, "archive")
+	require.NoError(t, os.WriteFile(file, []byte("lorem ipsum"), 0o644))
 
+	type args struct {
+		ctx    *context.Context
+		client *client.Mock
+	}
+
+	type asserter func(*testing.T, args)
 	type errChecker func(*testing.T, error)
-	var shouldErr = func(msg string) errChecker {
+	shouldErr := func(msg string) errChecker {
 		return func(t *testing.T, err error) {
 			t.Helper()
 			require.Error(t, err)
 			require.EqualError(t, err, msg)
 		}
 	}
-	var shouldNotErr = func(t *testing.T, err error) {
+	noAssertions := func(t *testing.T, _ args) {
+		t.Helper()
+	}
+	shouldNotErr := func(t *testing.T, err error) {
 		t.Helper()
 		require.NoError(t, err)
 	}
-	type args struct {
-		ctx    *context.Context
-		client client.Client
-	}
+
 	tests := []struct {
-		name        string
-		args        args
-		artifacts   []*artifact.Artifact
-		assertError errChecker
+		name               string
+		args               args
+		artifacts          []*artifact.Artifact
+		assertRunError     errChecker
+		assertPublishError errChecker
+		assert             asserter
 	}{
 		{
 			"valid public github",
@@ -116,18 +120,24 @@ func Test_doRun(t *testing.T) {
 								Owner: "test",
 								Name:  "test",
 							},
+							Folder:      "scoops",
 							Description: "A run pipe test formula",
 							Homepage:    "https://github.com/goreleaser",
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{Name: "foo_1.0.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64", Path: file},
 				{Name: "foo_1.0.1_windows_386.tar.gz", Goos: "windows", Goarch: "386", Path: file},
 			},
 			shouldNotErr,
+			shouldNotErr,
+			func(t *testing.T, a args) {
+				t.Helper()
+				require.Equal(t, "scoops/run-pipe.json", a.client.Path)
+			},
 		},
 		{
 			"wrap in directory",
@@ -164,7 +174,7 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{
@@ -187,6 +197,8 @@ func Test_doRun(t *testing.T) {
 				},
 			},
 			shouldNotErr,
+			shouldNotErr,
+			noAssertions,
 		},
 		{
 			"valid enterprise github",
@@ -224,13 +236,18 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{Name: "foo_1.0.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64", Path: file},
 				{Name: "foo_1.0.1_windows_386.tar.gz", Goos: "windows", Goarch: "386", Path: file},
 			},
 			shouldNotErr,
+			shouldNotErr,
+			func(t *testing.T, a args) {
+				t.Helper()
+				require.Equal(t, "run-pipe.json", a.client.Path)
+			},
 		},
 		{
 			"valid public gitlab",
@@ -267,7 +284,7 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{
@@ -275,21 +292,17 @@ func Test_doRun(t *testing.T) {
 					Goos:   "windows",
 					Goarch: "amd64",
 					Path:   file,
-					Extra: map[string]interface{}{
-						"ArtifactUploadHash": "820ead5d9d2266c728dce6d4d55b6460",
-					},
 				},
 				{
 					Name:   "foo_1.0.1_windows_386.tar.gz",
 					Goos:   "windows",
 					Goarch: "386",
 					Path:   file,
-					Extra: map[string]interface{}{
-						"ArtifactUploadHash": "820ead5d9d2266c728dce6d4d55b6460",
-					},
 				},
 			},
 			shouldNotErr,
+			shouldNotErr,
+			noAssertions,
 		},
 		{
 			"valid enterprise gitlab",
@@ -327,7 +340,7 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{
@@ -335,63 +348,17 @@ func Test_doRun(t *testing.T) {
 					Goos:   "windows",
 					Goarch: "amd64",
 					Path:   file,
-					Extra: map[string]interface{}{
-						"ArtifactUploadHash": "820ead5d9d2266c728dce6d4d55b6460",
-					},
 				},
 				{
 					Name:   "foo_1.0.1_windows_386.tar.gz",
 					Goos:   "windows",
 					Goarch: "386",
 					Path:   file,
-					Extra: map[string]interface{}{
-						"ArtifactUploadHash": "820ead5d9d2266c728dce6d4d55b6460",
-					},
 				},
 			},
 			shouldNotErr,
-		},
-		{
-			"token type not implemented for pipe",
-			args{
-				&context.Context{
-					Git: context.GitInfo{
-						CurrentTag: "v1.0.1",
-					},
-					Version:   "1.0.1",
-					Artifacts: artifact.New(),
-					Config: config.Project{
-						Builds: []config.Build{
-							{Binary: "test", Goarch: []string{"amd64"}, Goos: []string{"windows"}},
-						},
-						Dist:        ".",
-						ProjectName: "run-pipe",
-						Archives: []config.Archive{
-							{Format: "tar.gz"},
-						},
-						Release: config.Release{
-							GitHub: config.Repo{
-								Owner: "test",
-								Name:  "test",
-							},
-						},
-						Scoop: config.Scoop{
-							Bucket: config.RepoRef{
-								Owner: "test",
-								Name:  "test",
-							},
-							Description: "A run pipe test formula",
-							Homepage:    "https://github.com/goreleaser",
-						},
-					},
-				},
-				&DummyClient{NotImplemented: true},
-			},
-			[]*artifact.Artifact{
-				{Name: "foo_1.0.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64", Path: file},
-				{Name: "foo_1.0.1_windows_386.tar.gz", Goos: "windows", Goarch: "386", Path: file},
-			},
-			shouldErr(ErrTokenTypeNotImplementedForScoop.Error()),
+			shouldNotErr,
+			noAssertions,
 		},
 		{
 			"no windows build",
@@ -428,92 +395,15 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{Name: "foo_1.0.1_linux_amd64.tar.gz", Goos: "linux", Goarch: "amd64"},
 				{Name: "foo_1.0.1_linux_386.tar.gz", Goos: "linux", Goarch: "386"},
 			},
 			shouldErr("scoop requires a windows build"),
-		},
-		{
-			"no scoop",
-			args{
-				&context.Context{
-					TokenType: context.TokenTypeGitHub,
-					Git: context.GitInfo{
-						CurrentTag: "v1.0.1",
-					},
-					Version:   "1.0.1",
-					Artifacts: artifact.New(),
-					Config: config.Project{
-						Builds: []config.Build{
-							{Binary: "test", Goarch: []string{"amd64"}, Goos: []string{"windows"}},
-						},
-						Dist:        ".",
-						ProjectName: "run-pipe",
-						Archives: []config.Archive{
-							{Format: "tar.gz"},
-						},
-						Release: config.Release{
-							GitHub: config.Repo{
-								Owner: "test",
-								Name:  "test",
-							},
-						},
-					},
-				},
-				&DummyClient{},
-			},
-			[]*artifact.Artifact{
-				{Name: "foo_1.0.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64"},
-				{Name: "foo_1.0.1_windows_386.tar.gz", Goos: "windows", Goarch: "386"},
-			},
-			shouldErr(pipe.ErrSkipDisabledPipe.Error()),
-		},
-		{
-			"no publish",
-			args{
-				&context.Context{
-					TokenType: context.TokenTypeGitHub,
-					Git: context.GitInfo{
-						CurrentTag: "v1.0.1",
-					},
-					Version:   "1.0.1",
-					Artifacts: artifact.New(),
-					Config: config.Project{
-						Builds: []config.Build{
-							{Binary: "test", Goarch: []string{"amd64"}, Goos: []string{"windows"}},
-						},
-						Dist:        ".",
-						ProjectName: "run-pipe",
-						Archives: []config.Archive{
-							{Format: "tar.gz"},
-						},
-						Release: config.Release{
-							GitHub: config.Repo{
-								Owner: "test",
-								Name:  "test",
-							},
-						},
-						Scoop: config.Scoop{
-							Bucket: config.RepoRef{
-								Owner: "test",
-								Name:  "test",
-							},
-							Description: "A run pipe test formula",
-							Homepage:    "https://github.com/goreleaser",
-						},
-					},
-					SkipPublish: true,
-				},
-				&DummyClient{},
-			},
-			[]*artifact.Artifact{
-				{Name: "foo_1.0.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64", Path: file},
-				{Name: "foo_1.0.1_windows_386.tar.gz", Goos: "windows", Goarch: "386", Path: file},
-			},
-			shouldErr(pipe.ErrSkipPublishEnabled.Error()),
+			shouldNotErr,
+			noAssertions,
 		},
 		{
 			"is draft",
@@ -547,13 +437,15 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{Name: "foo_1.0.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64", Path: file},
 				{Name: "foo_1.0.1_windows_386.tar.gz", Goos: "windows", Goarch: "386", Path: file},
 			},
+			shouldNotErr,
 			shouldErr("release is marked as draft"),
+			noAssertions,
 		},
 		{
 			"is prerelease and skip upload set to auto",
@@ -597,13 +489,15 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{Name: "foo_1.0.1-pre.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64", Path: file},
 				{Name: "foo_1.0.1-pre.1_windows_386.tar.gz", Goos: "windows", Goarch: "386", Path: file},
 			},
+			shouldNotErr,
 			shouldErr("release is prerelease"),
+			noAssertions,
 		},
 		{
 			"skip upload set to true",
@@ -641,13 +535,15 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{Name: "foo_1.0.1-pre.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64", Path: file},
 				{Name: "foo_1.0.1-pre.1_windows_386.tar.gz", Goos: "windows", Goarch: "386", Path: file},
 			},
+			shouldNotErr,
 			shouldErr("scoop.skip_upload is true"),
+			noAssertions,
 		},
 		{
 			"release is disabled",
@@ -681,13 +577,15 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{Name: "foo_1.0.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64", Path: file},
 				{Name: "foo_1.0.1_windows_386.tar.gz", Goos: "windows", Goarch: "386", Path: file},
 			},
+			shouldNotErr,
 			shouldErr("release is disabled"),
+			noAssertions,
 		},
 		{
 			"no archive",
@@ -721,39 +619,43 @@ func Test_doRun(t *testing.T) {
 						},
 					},
 				},
-				&DummyClient{},
+				client.NewMock(),
 			},
 			[]*artifact.Artifact{
 				{Name: "foo_1.0.1_windows_amd64.tar.gz", Goos: "windows", Goarch: "amd64", Path: file},
 				{Name: "foo_1.0.1_windows_386.tar.gz", Goos: "windows", Goarch: "386", Path: file},
 			},
 			shouldErr("archive format is binary"),
+			shouldNotErr,
+			noAssertions,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var ctx = tt.args.ctx
+			ctx := tt.args.ctx
 			for _, a := range tt.artifacts {
 				ctx.Artifacts.Add(a)
 			}
 			require.NoError(t, Pipe{}.Default(ctx))
 
-			tt.assertError(t, doRun(ctx, tt.args.client))
+			tt.assertRunError(t, doRun(ctx, tt.args.client))
+			tt.assertPublishError(t, doPublish(ctx, tt.args.client))
+			tt.assert(t, tt.args)
 		})
 	}
 }
 
 func Test_buildManifest(t *testing.T) {
-	var folder = t.TempDir()
-	var file = filepath.Join(folder, "archive")
-	require.NoError(t, ioutil.WriteFile(file, []byte("lorem ipsum"), 0644))
+	folder := t.TempDir()
+	file := filepath.Join(folder, "archive")
+	require.NoError(t, os.WriteFile(file, []byte("lorem ipsum"), 0o644))
 
 	tests := []struct {
-		filename string
-		ctx      *context.Context
+		desc string
+		ctx  *context.Context
 	}{
 		{
-			"testdata/test_buildmanifest.json.golden",
+			"common",
 			&context.Context{
 				Context:   ctx.Background(),
 				TokenType: context.TokenTypeGitHub,
@@ -790,7 +692,7 @@ func Test_buildManifest(t *testing.T) {
 			},
 		},
 		{
-			"testdata/test_buildmanifest_pre_post_install.json.golden",
+			"pre-post-install",
 			&context.Context{
 				Context:   ctx.Background(),
 				TokenType: context.TokenTypeGitHub,
@@ -829,7 +731,7 @@ func Test_buildManifest(t *testing.T) {
 			},
 		},
 		{
-			"testdata/test_buildmanifest_url_template.json.golden",
+			"url template",
 			&context.Context{
 				Context:   ctx.Background(),
 				TokenType: context.TokenTypeGitHub,
@@ -871,7 +773,7 @@ func Test_buildManifest(t *testing.T) {
 			},
 		},
 		{
-			"testdata/test_buildmanifest_gitlab_url_template.json.golden",
+			"gitlab url template",
 			&context.Context{
 				Context:   ctx.Background(),
 				TokenType: context.TokenTypeGitLab,
@@ -905,7 +807,7 @@ func Test_buildManifest(t *testing.T) {
 						},
 						Description:           "A run pipe test formula",
 						Homepage:              "https://gitlab.com/goreleaser",
-						URLTemplate:           "http://gitlab.mycompany.com/foo/bar/uploads/{{ .ArtifactUploadHash }}/{{ .ArtifactName }}",
+						URLTemplate:           "http://gitlab.mycompany.com/foo/bar/-/releases/{{ .Tag }}/downloads/{{ .ArtifactName }}",
 						CommitMessageTemplate: "chore(scoop): update {{ .ProjectName }} version {{ .Tag }}",
 						Persist:               []string{"data.cfg", "etc"},
 					},
@@ -915,8 +817,8 @@ func Test_buildManifest(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.filename, func(t *testing.T) {
-			var ctx = tt.ctx
+		t.Run(tt.desc, func(t *testing.T) {
+			ctx := tt.ctx
 			err := Pipe{}.Default(ctx)
 			require.NoError(t, err)
 
@@ -930,8 +832,7 @@ func Test_buildManifest(t *testing.T) {
 					Goarch: "amd64",
 					Path:   file,
 					Extra: map[string]interface{}{
-						"ArtifactUploadHash": "820ead5d9d2266c728dce6d4d55b6460",
-						"Builds": []*artifact.Artifact{
+						artifact.ExtraBuilds: []*artifact.Artifact{
 							{
 								Name: "foo.exe",
 							},
@@ -947,8 +848,7 @@ func Test_buildManifest(t *testing.T) {
 					Goarch: "arm",
 					Path:   file,
 					Extra: map[string]interface{}{
-						"ArtifactUploadHash": "820ead5d9d2266c728dce6d4d55b6460",
-						"Builds": []*artifact.Artifact{
+						artifact.ExtraBuilds: []*artifact.Artifact{
 							{
 								Name: "foo.exe",
 							},
@@ -964,8 +864,7 @@ func Test_buildManifest(t *testing.T) {
 					Goarch: "386",
 					Path:   file,
 					Extra: map[string]interface{}{
-						"ArtifactUploadHash": "820ead5d9d2266c728dce6d4d55b6460",
-						"Builds": []*artifact.Artifact{
+						artifact.ExtraBuilds: []*artifact.Artifact{
 							{
 								Name: "foo.exe",
 							},
@@ -981,21 +880,79 @@ func Test_buildManifest(t *testing.T) {
 			out, err := doBuildManifest(mf)
 			require.NoError(t, err)
 
-			if *update {
-				require.NoError(t, ioutil.WriteFile(tt.filename, out.Bytes(), 0655))
-			}
-			bts, err := ioutil.ReadFile(tt.filename)
-			require.NoError(t, err)
-			require.Equal(t, string(bts), out.String())
+			golden.RequireEqualJSON(t, out.Bytes())
 		})
 	}
 }
 
+func getScoopPipeSkipCtx(folder string) (*context.Context, string) {
+	ctx := &context.Context{
+		Git: context.GitInfo{
+			CurrentTag: "v1.0.1",
+		},
+		Version:   "1.0.1",
+		Artifacts: artifact.New(),
+		Config: config.Project{
+			Archives: []config.Archive{
+				{Format: "tar.gz"},
+			},
+			Builds: []config.Build{
+				{Binary: "test"},
+			},
+			Dist:        folder,
+			ProjectName: "run-pipe",
+			Scoop: config.Scoop{
+				Bucket: config.RepoRef{
+					Owner: "test",
+					Name:  "test",
+				},
+				Description: "A run pipe test formula",
+				Homepage:    "https://github.com/goreleaser",
+				Name:        "run-pipe",
+			},
+		},
+	}
+
+	path := filepath.Join(folder, "bin.tar.gz")
+
+	ctx.Artifacts.Add(&artifact.Artifact{
+		Name:   "bin.tar.gz",
+		Path:   path,
+		Goos:   "windows",
+		Goarch: "amd64",
+		Type:   artifact.UploadableArchive,
+		Extra: map[string]interface{}{
+			artifact.ExtraID:     "foo",
+			artifact.ExtraFormat: "tar.gz",
+		},
+	})
+
+	return ctx, path
+}
+
+func TestRunPipeScoopWithSkipUpload(t *testing.T) {
+	folder := t.TempDir()
+	ctx, path := getScoopPipeSkipCtx(folder)
+	ctx.Config.Scoop.SkipUpload = "true"
+
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	cli := client.NewMock()
+	require.NoError(t, doRun(ctx, cli))
+	require.EqualError(t, doPublish(ctx, cli), `scoop.skip_upload is true`)
+
+	distFile := filepath.Join(folder, ctx.Config.Scoop.Name+".json")
+	_, err = os.Stat(distFile)
+	require.NoError(t, err, "file should exist: "+distFile)
+}
+
 func TestWrapInDirectory(t *testing.T) {
-	var folder = t.TempDir()
-	var file = filepath.Join(folder, "archive")
-	require.NoError(t, ioutil.WriteFile(file, []byte("lorem ipsum"), 0644))
-	var ctx = &context.Context{
+	folder := t.TempDir()
+	file := filepath.Join(folder, "archive")
+	require.NoError(t, os.WriteFile(file, []byte("lorem ipsum"), 0o644))
+	ctx := &context.Context{
 		TokenType: context.TokenTypeGitLab,
 		Git: context.GitInfo{
 			CurrentTag: "v1.0.1",
@@ -1027,7 +984,7 @@ func TestWrapInDirectory(t *testing.T) {
 				},
 				Description:           "A run pipe test formula",
 				Homepage:              "https://gitlab.com/goreleaser",
-				URLTemplate:           "http://gitlab.mycompany.com/foo/bar/uploads/{{ .ArtifactUploadHash }}/{{ .ArtifactName }}",
+				URLTemplate:           "http://gitlab.mycompany.com/foo/bar/-/releases/{{ .Tag }}/downloads/{{ .ArtifactName }}",
 				CommitMessageTemplate: "chore(scoop): update {{ .ProjectName }} version {{ .Tag }}",
 				Persist:               []string{"data.cfg", "etc"},
 			},
@@ -1043,9 +1000,8 @@ func TestWrapInDirectory(t *testing.T) {
 			Goarch: "amd64",
 			Path:   file,
 			Extra: map[string]interface{}{
-				"ArtifactUploadHash": "820ead5d9d2266c728dce6d4d55b6460",
-				"WrappedIn":          "foo_1.0.1_windows_amd64",
-				"Builds": []*artifact.Artifact{
+				artifact.ExtraWrappedIn: "foo_1.0.1_windows_amd64",
+				artifact.ExtraBuilds: []*artifact.Artifact{
 					{
 						Name: "foo.exe",
 					},
@@ -1060,43 +1016,22 @@ func TestWrapInDirectory(t *testing.T) {
 
 	out, err := doBuildManifest(mf)
 	require.NoError(t, err)
-
-	var golden = "testdata/test_buildmanifest_wrap.json.golden"
-	if *update {
-		require.NoError(t, ioutil.WriteFile(golden, out.Bytes(), 0655))
-	}
-	bts, err := ioutil.ReadFile(golden)
-	require.NoError(t, err)
-	require.Equal(t, string(bts), out.String())
+	golden.RequireEqualJSON(t, out.Bytes())
 }
 
-type DummyClient struct {
-	CreatedFile    bool
-	Content        string
-	NotImplemented bool
-}
+func TestSkip(t *testing.T) {
+	t.Run("skip", func(t *testing.T) {
+		require.True(t, Pipe{}.Skip(context.New(config.Project{})))
+	})
 
-func (dc *DummyClient) CloseMilestone(ctx *context.Context, repo client.Repo, title string) error {
-	return nil
-}
-
-func (dc *DummyClient) CreateRelease(ctx *context.Context, body string) (releaseID string, err error) {
-	return
-}
-
-func (dc *DummyClient) ReleaseURLTemplate(ctx *context.Context) (string, error) {
-	if dc.NotImplemented {
-		return "", client.NotImplementedError{}
-	}
-	return "", nil
-}
-
-func (dc *DummyClient) CreateFile(ctx *context.Context, commitAuthor config.CommitAuthor, repo client.Repo, content []byte, path, msg string) (err error) {
-	dc.CreatedFile = true
-	dc.Content = string(content)
-	return
-}
-
-func (dc *DummyClient) Upload(ctx *context.Context, releaseID string, artifact *artifact.Artifact, file *os.File) (err error) {
-	return
+	t.Run("dont skip", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Scoop: config.Scoop{
+				Bucket: config.RepoRef{
+					Name: "a",
+				},
+			},
+		})
+		require.False(t, Pipe{}.Skip(ctx))
+	})
 }

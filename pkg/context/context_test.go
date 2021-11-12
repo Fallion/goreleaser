@@ -12,7 +12,7 @@ import (
 func TestNew(t *testing.T) {
 	require.NoError(t, os.Setenv("FOO", "NOT BAR"))
 	require.NoError(t, os.Setenv("BAR", "1"))
-	var ctx = New(config.Project{
+	ctx := New(config.Project{
 		Env: []string{
 			"FOO=BAR",
 		},
@@ -29,4 +29,10 @@ func TestNewWithTimeout(t *testing.T) {
 	cancel()
 	<-ctx.Done()
 	require.EqualError(t, ctx.Err(), `context canceled`)
+}
+
+func TestToEnv(t *testing.T) {
+	require.Equal(t, Env{"FOO": "BAR"}, ToEnv([]string{"=nope", "FOO=BAR"}))
+	require.Equal(t, Env{"FOO": "BAR"}, ToEnv([]string{"nope", "FOO=BAR"}))
+	require.Equal(t, Env{"FOO": "BAR", "nope": ""}, ToEnv([]string{"nope=", "FOO=BAR"}))
 }

@@ -1,7 +1,6 @@
 package golang
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/apex/log"
 	"github.com/goreleaser/goreleaser/internal/artifact"
+	"github.com/goreleaser/goreleaser/internal/builders/buildtarget"
 	"github.com/goreleaser/goreleaser/internal/tmpl"
 	api "github.com/goreleaser/goreleaser/pkg/build"
 	"github.com/goreleaser/goreleaser/pkg/config"
@@ -60,7 +60,7 @@ func (*Builder) WithDefaults(build config.Build) (config.Build, error) {
 		if len(build.Gomips) == 0 {
 			build.Gomips = []string{"hardfloat"}
 		}
-		targets, err := matrix(build)
+		targets, err := buildtarget.List(build)
 		build.Targets = targets
 		if err != nil {
 			return build, err
@@ -71,65 +71,40 @@ func (*Builder) WithDefaults(build config.Build) (config.Build, error) {
 
 // Build builds a golang build.
 func (*Builder) Build(ctx *context.Context, build config.Build, options api.Options) error {
-	if !ctx.Config.GoMod.Proxy {
-		if err := checkMain(build); err != nil {
-			return err
-		}
-	}
-	target, err := newBuildTarget(options.Target)
-	if err != nil {
+	if err := checkMain(build); err != nil {
 		return err
 	}
-
-	cmd := []string{build.GoBinary, "build"}
-
-	env := append(ctx.Env.Strings(), build.Env...)
-	env = append(env, target.Env()...)
 
 	artifact := &artifact.Artifact{
 		Type:   artifact.Binary,
 		Path:   options.Path,
 		Name:   options.Name,
-		Goos:   target.os,
-		Goarch: target.arch,
-		Goarm:  target.arm,
-		Gomips: target.mips,
+		Goos:   options.Goos,
+		Goarch: options.Goarch,
+		Goarm:  options.Goarm,
+		Gomips: options.Gomips,
 		Extra: map[string]interface{}{
-			"Binary": strings.TrimSuffix(filepath.Base(options.Path), options.Ext),
-			"Ext":    options.Ext,
-			"ID":     build.ID,
+			artifact.ExtraBinary: strings.TrimSuffix(filepath.Base(options.Path), options.Ext),
+			artifact.ExtraExt:    options.Ext,
+			artifact.ExtraID:     build.ID,
 		},
 	}
 
-	flags, err := processFlags(ctx, artifact, env, build.Flags, "")
+	env := append(ctx.Env.Strings(), build.Env...)
+	env = append(
+		env,
+		"GOOS="+options.Goos,
+		"GOARCH="+options.Goarch,
+		"GOARM="+options.Goarm,
+		"GOMIPS="+options.Gomips,
+		"GOMIPS64="+options.Gomips,
+	)
+
+	cmd, err := buildGoBuildLine(ctx, build, options, artifact, env)
 	if err != nil {
 		return err
 	}
-	cmd = append(cmd, flags...)
 
-	asmflags, err := processFlags(ctx, artifact, env, build.Asmflags, "-asmflags=")
-	if err != nil {
-		return err
-	}
-	cmd = append(cmd, asmflags...)
-
-	gcflags, err := processFlags(ctx, artifact, env, build.Gcflags, "-gcflags=")
-	if err != nil {
-		return err
-	}
-	cmd = append(cmd, gcflags...)
-
-	// flag prefix is skipped because ldflags need to output a single string
-	ldflags, err := processFlags(ctx, artifact, env, build.Ldflags, "")
-	if err != nil {
-		return err
-	}
-	// ldflags need to be single string in order to apply correctly
-	processedLdFlags := joinLdFlags(ldflags)
-
-	cmd = append(cmd, processedLdFlags)
-
-	cmd = append(cmd, "-o", options.Path, build.Main)
 	if err := run(ctx, cmd, env, build.Dir); err != nil {
 		return fmt.Errorf("failed to build for %s: %w", options.Target, err)
 	}
@@ -154,10 +129,54 @@ func (*Builder) Build(ctx *context.Context, build config.Build, options api.Opti
 	return nil
 }
 
+func buildGoBuildLine(ctx *context.Context, build config.Build, options api.Options, artifact *artifact.Artifact, env []string) ([]string, error) {
+	cmd := []string{build.GoBinary, "build"}
+	flags, err := processFlags(ctx, artifact, env, build.Flags, "")
+	if err != nil {
+		return cmd, err
+	}
+	cmd = append(cmd, flags...)
+
+	asmflags, err := processFlags(ctx, artifact, env, build.Asmflags, "-asmflags=")
+	if err != nil {
+		return cmd, err
+	}
+	cmd = append(cmd, asmflags...)
+
+	gcflags, err := processFlags(ctx, artifact, env, build.Gcflags, "-gcflags=")
+	if err != nil {
+		return cmd, err
+	}
+	cmd = append(cmd, gcflags...)
+
+	// tags is not a repeatable flag
+	if len(build.Tags) > 0 {
+		tags, err := processFlags(ctx, artifact, env, build.Tags, "")
+		if err != nil {
+			return cmd, err
+		}
+		cmd = append(cmd, "-tags="+strings.Join(tags, ","))
+	}
+
+	// ldflags is not a repeatable flag
+	if len(build.Ldflags) > 0 {
+		// flag prefix is skipped because ldflags need to output a single string
+		ldflags, err := processFlags(ctx, artifact, env, build.Ldflags, "")
+		if err != nil {
+			return cmd, err
+		}
+		// ldflags need to be single string in order to apply correctly
+		cmd = append(cmd, "-ldflags="+strings.Join(ldflags, " "))
+	}
+
+	cmd = append(cmd, "-o", options.Path, build.Main)
+	return cmd, nil
+}
+
 func processFlags(ctx *context.Context, a *artifact.Artifact, env, flags []string, flagPrefix string) ([]string, error) {
 	processed := make([]string, 0, len(flags))
 	for _, rawFlag := range flags {
-		flag, err := tmpl.New(ctx).WithEnvS(env).WithArtifact(a, map[string]string{}).Apply(rawFlag)
+		flag, err := processFlag(ctx, a, env, rawFlag)
 		if err != nil {
 			return nil, err
 		}
@@ -166,12 +185,8 @@ func processFlags(ctx *context.Context, a *artifact.Artifact, env, flags []strin
 	return processed, nil
 }
 
-func joinLdFlags(flags []string) string {
-	ldflagString := strings.Builder{}
-	ldflagString.WriteString("-ldflags=")
-	ldflagString.WriteString(strings.Join(flags, " "))
-
-	return ldflagString.String()
+func processFlag(ctx *context.Context, a *artifact.Artifact, env []string, rawFlag string) (string, error) {
+	return tmpl.New(ctx).WithEnvS(env).WithArtifact(a, map[string]string{}).Apply(rawFlag)
 }
 
 func run(ctx *context.Context, command, env []string, dir string) error {
@@ -182,50 +197,26 @@ func run(ctx *context.Context, command, env []string, dir string) error {
 	cmd.Dir = dir
 	log.Debug("running")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		log.WithError(err).Debug("failed")
-		return errors.New(string(out))
+		return fmt.Errorf("%w: %s", err, string(out))
 	}
 	return nil
 }
 
-type buildTarget struct {
-	os, arch, arm, mips string
-}
-
-func newBuildTarget(s string) (buildTarget, error) {
-	t := buildTarget{}
-	parts := strings.Split(s, "_")
-	if len(parts) < 2 {
-		return t, fmt.Errorf("%s is not a valid build target", s)
-	}
-	t.os = parts[0]
-	t.arch = parts[1]
-	if strings.HasPrefix(t.arch, "arm") && len(parts) == 3 {
-		t.arm = parts[2]
-	}
-	if strings.HasPrefix(t.arch, "mips") && len(parts) == 3 {
-		t.mips = parts[2]
-	}
-	return t, nil
-}
-
-func (b buildTarget) Env() []string {
-	return []string{
-		"GOOS=" + b.os,
-		"GOARCH=" + b.arch,
-		"GOARM=" + b.arm,
-		"GOMIPS=" + b.mips,
-		"GOMIPS64=" + b.mips,
-	}
-}
-
 func checkMain(build config.Build) error {
 	main := build.Main
+	if build.UnproxiedMain != "" {
+		main = build.UnproxiedMain
+	}
+	dir := build.Dir
+	if build.UnproxiedDir != "" {
+		dir = build.UnproxiedDir
+	}
+
 	if main == "" {
 		main = "."
 	}
-	if build.Dir != "" {
-		main = filepath.Join(build.Dir, main)
+	if dir != "" {
+		main = filepath.Join(dir, main)
 	}
 	stat, ferr := os.Stat(main)
 	if ferr != nil {

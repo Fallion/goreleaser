@@ -2,7 +2,6 @@ package golang
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,8 +88,41 @@ func TestWithDefaults(t *testing.T) {
 			},
 			goBinary: "go",
 		},
+		"empty with custom dir": {
+			build: config.Build{
+				ID:     "foo2",
+				Binary: "foo",
+				Dir:    "./testdata",
+			},
+			targets: []string{
+				"linux_amd64",
+				"linux_386",
+				"linux_arm64",
+				"darwin_amd64",
+				"darwin_arm64",
+			},
+			goBinary: "go",
+		},
+		"empty with custom dir that doest exist": {
+			build: config.Build{
+				ID:     "foo2",
+				Binary: "foo",
+				Dir:    "./nope",
+			},
+			targets: []string{
+				"linux_amd64",
+				"linux_386",
+				"linux_arm64",
+				"darwin_amd64",
+				"darwin_arm64",
+			},
+			goBinary: "go",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if testcase.build.GoBinary != "" && testcase.build.GoBinary != "go" {
+				createFakeGoBinaryWithVersion(t, testcase.build.GoBinary, "go1.17")
+			}
 			config := config.Project{
 				Builds: []config.Build{
 					testcase.build,
@@ -104,6 +136,30 @@ func TestWithDefaults(t *testing.T) {
 			require.EqualValues(t, testcase.goBinary, build.GoBinary)
 		})
 	}
+}
+
+// createFakeGoBinaryWithVersion creates a temporary executable with the
+// given name, which will output a go version string with the given version.
+//  The temporary directory created by this function will be placed in the PATH
+// variable for the duration of (and cleaned up at the end of) the
+// current test run.
+func createFakeGoBinaryWithVersion(tb testing.TB, name, version string) {
+	tb.Helper()
+	d := tb.TempDir()
+
+	require.NoError(tb, os.WriteFile(
+		filepath.Join(d, name),
+		[]byte(fmt.Sprintf("#!/bin/sh\necho %s", version)),
+		0o755,
+	))
+
+	currentPath := os.Getenv("PATH")
+	tb.Cleanup(func() {
+		require.NoError(tb, os.Setenv("PATH", currentPath))
+	})
+
+	path := fmt.Sprintf("%s%c%s", d, os.PathListSeparator, currentPath)
+	require.NoError(tb, os.Setenv("PATH", path))
 }
 
 func TestInvalidTargets(t *testing.T) {
@@ -173,6 +229,7 @@ func TestBuild(t *testing.T) {
 				Asmflags: []string{".=", "all="},
 				Gcflags:  []string{"all="},
 				Flags:    []string{"{{.Env.GO_FLAGS}}"},
+				Tags:     []string{"osusergo", "netgo", "static_build"},
 				GoBinary: "go",
 			},
 		},
@@ -195,10 +252,27 @@ func TestBuild(t *testing.T) {
 		// injecting some delay here to force inconsistent mod times on bins
 		time.Sleep(2 * time.Second)
 
+		parts := strings.Split(target, "_")
+		goos := parts[0]
+		goarch := parts[1]
+		goarm := ""
+		gomips := ""
+		if len(parts) > 2 {
+			if strings.Contains(goarch, "arm") {
+				goarm = parts[2]
+			}
+			if strings.Contains(goarch, "mips") {
+				gomips = parts[2]
+			}
+		}
 		err := Default.Build(ctx, build, api.Options{
 			Target: target,
 			Name:   bin + ext,
 			Path:   filepath.Join(folder, "dist", target, bin+ext),
+			Goos:   goos,
+			Goarch: goarch,
+			Goarm:  goarm,
+			Gomips: gomips,
 			Ext:    ext,
 		})
 		require.NoError(t, err)
@@ -211,9 +285,9 @@ func TestBuild(t *testing.T) {
 			Goarch: "amd64",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -224,9 +298,9 @@ func TestBuild(t *testing.T) {
 			Gomips: "softfloat",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -237,9 +311,9 @@ func TestBuild(t *testing.T) {
 			Gomips: "softfloat",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -249,9 +323,9 @@ func TestBuild(t *testing.T) {
 			Goarch: "amd64",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -262,9 +336,9 @@ func TestBuild(t *testing.T) {
 			Goarm:  "6",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    "",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    "",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -274,9 +348,9 @@ func TestBuild(t *testing.T) {
 			Goarch: "amd64",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    ".exe",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    ".exe",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 		{
@@ -286,9 +360,9 @@ func TestBuild(t *testing.T) {
 			Goarch: "wasm",
 			Type:   artifact.Binary,
 			Extra: map[string]interface{}{
-				"Ext":    ".wasm",
-				"Binary": "foo-v5.6.7",
-				"ID":     "foo",
+				artifact.ExtraExt:    ".wasm",
+				artifact.ExtraBinary: "foo-v5.6.7",
+				artifact.ExtraID:     "foo",
 			},
 		},
 	})
@@ -394,31 +468,6 @@ func TestBuildFailed(t *testing.T) {
 	require.Empty(t, ctx.Artifacts.List())
 }
 
-func TestBuildInvalidTarget(t *testing.T) {
-	folder := testlib.Mktmp(t)
-	writeGoodMain(t, folder)
-	target := "linux"
-	config := config.Project{
-		Builds: []config.Build{
-			{
-				ID:      "foo",
-				Binary:  "foo",
-				Targets: []string{target},
-			},
-		},
-	}
-	ctx := context.New(config)
-	ctx.Git.CurrentTag = "5.6.7"
-	build := ctx.Config.Builds[0]
-	err := Default.Build(ctx, build, api.Options{
-		Target: target,
-		Name:   build.Binary,
-		Path:   filepath.Join(folder, "dist", target, build.Binary),
-	})
-	require.EqualError(t, err, "linux is not a valid build target")
-	require.Len(t, ctx.Artifacts.List(), 0)
-}
-
 func TestRunInvalidAsmflags(t *testing.T) {
 	folder := testlib.Mktmp(t)
 	writeGoodMain(t, folder)
@@ -508,41 +557,60 @@ func TestRunInvalidFlags(t *testing.T) {
 }
 
 func TestRunPipeWithoutMainFunc(t *testing.T) {
-	folder := testlib.Mktmp(t)
-	writeMainWithoutMainFunc(t, folder)
-	config := config.Project{
-		Builds: []config.Build{
-			{
-				Binary: "no-main",
-				Hooks:  config.HookConfig{},
-				Targets: []string{
-					runtimeTarget,
+	newCtx := func(t *testing.T) *context.Context {
+		t.Helper()
+		folder := testlib.Mktmp(t)
+		writeMainWithoutMainFunc(t, folder)
+		config := config.Project{
+			Builds: []config.Build{
+				{
+					Binary: "no-main",
+					Hooks:  config.BuildHookConfig{},
+					Targets: []string{
+						runtimeTarget,
+					},
 				},
 			},
-		},
+		}
+		ctx := context.New(config)
+		ctx.Git.CurrentTag = "5.6.7"
+		return ctx
 	}
-	ctx := context.New(config)
-	ctx.Git.CurrentTag = "5.6.7"
 	t.Run("empty", func(t *testing.T) {
+		ctx := newCtx(t)
 		ctx.Config.Builds[0].Main = ""
 		require.EqualError(t, Default.Build(ctx, ctx.Config.Builds[0], api.Options{
 			Target: runtimeTarget,
 		}), `build for no-main does not contain a main function`)
 	})
 	t.Run("not main.go", func(t *testing.T) {
+		ctx := newCtx(t)
 		ctx.Config.Builds[0].Main = "foo.go"
 		require.EqualError(t, Default.Build(ctx, ctx.Config.Builds[0], api.Options{
 			Target: runtimeTarget,
 		}), `couldn't find main file: stat foo.go: no such file or directory`)
 	})
 	t.Run("glob", func(t *testing.T) {
+		ctx := newCtx(t)
 		ctx.Config.Builds[0].Main = "."
 		require.EqualError(t, Default.Build(ctx, ctx.Config.Builds[0], api.Options{
 			Target: runtimeTarget,
 		}), `build for no-main does not contain a main function`)
 	})
 	t.Run("fixed main.go", func(t *testing.T) {
+		ctx := newCtx(t)
 		ctx.Config.Builds[0].Main = "main.go"
+		require.EqualError(t, Default.Build(ctx, ctx.Config.Builds[0], api.Options{
+			Target: runtimeTarget,
+		}), `build for no-main does not contain a main function`)
+	})
+	t.Run("using gomod.proxy", func(t *testing.T) {
+		ctx := newCtx(t)
+		ctx.Config.GoMod.Proxy = true
+		ctx.Config.Builds[0].Dir = "dist/proxy/test"
+		ctx.Config.Builds[0].Main = "github.com/caarlos0/test"
+		ctx.Config.Builds[0].UnproxiedDir = "."
+		ctx.Config.Builds[0].UnproxiedMain = "."
 		require.EqualError(t, Default.Build(ctx, ctx.Config.Builds[0], api.Options{
 			Target: runtimeTarget,
 		}), `build for no-main does not contain a main function`)
@@ -551,31 +619,41 @@ func TestRunPipeWithoutMainFunc(t *testing.T) {
 
 func TestRunPipeWithProxiedRepo(t *testing.T) {
 	folder := testlib.Mktmp(t)
+	out, err := exec.Command("git", "clone", "https://github.com/goreleaser/goreleaser", "-b", "v0.161.1", "--depth=1", ".").CombinedOutput()
+	require.NoError(t, err, string(out))
+
 	proxied := filepath.Join(folder, "dist/proxy/default")
 	require.NoError(t, os.MkdirAll(proxied, 0o750))
-	require.NoError(t, ioutil.WriteFile(
+	require.NoError(t, os.WriteFile(
 		filepath.Join(proxied, "main.go"),
-		[]byte("// +build: main\npackage main\nimport github.com/goreleaser/goreleaser"),
+		[]byte(`// +build main
+package main
+
+import _ "github.com/goreleaser/goreleaser"
+`),
 		0o666,
 	))
-	require.NoError(t, ioutil.WriteFile(
+	require.NoError(t, os.WriteFile(
 		filepath.Join(proxied, "go.mod"),
 		[]byte("module foo\nrequire github.com/goreleaser/goreleaser v0.161.1"),
 		0o666,
 	))
-	cmd := exec.Command("go", "mod", "download")
+
+	cmd := exec.Command("go", "mod", "tidy")
 	cmd.Dir = proxied
 	require.NoError(t, cmd.Run())
+
 	config := config.Project{
 		GoMod: config.GoMod{
 			Proxy: true,
 		},
 		Builds: []config.Build{
 			{
-				Binary: "foo",
-				Hooks:  config.HookConfig{},
-				Main:   "github.com/goreleaser/goreleaser",
-				Dir:    proxied,
+				Binary:        "foo",
+				Main:          "github.com/goreleaser/goreleaser",
+				Dir:           proxied,
+				UnproxiedMain: ".",
+				UnproxiedDir:  ".",
 				Targets: []string{
 					runtimeTarget,
 				},
@@ -592,7 +670,7 @@ func TestRunPipeWithProxiedRepo(t *testing.T) {
 
 func TestRunPipeWithMainFuncNotInMainGoFile(t *testing.T) {
 	folder := testlib.Mktmp(t)
-	require.NoError(t, ioutil.WriteFile(
+	require.NoError(t, os.WriteFile(
 		filepath.Join(folder, "foo.go"),
 		[]byte("package main\nfunc main() {println(0)}"),
 		0o644,
@@ -602,7 +680,7 @@ func TestRunPipeWithMainFuncNotInMainGoFile(t *testing.T) {
 			{
 				Env:    []string{"GO111MODULE=off"},
 				Binary: "foo",
-				Hooks:  config.HookConfig{},
+				Hooks:  config.BuildHookConfig{},
 				Targets: []string{
 					runtimeTarget,
 				},
@@ -688,7 +766,7 @@ func TestProcessFlags(t *testing.T) {
 		Goarch: "amd64",
 		Goarm:  "7",
 		Extra: map[string]interface{}{
-			"Binary": "binary",
+			artifact.ExtraBinary: "binary",
 		},
 	}
 
@@ -730,21 +808,6 @@ func TestProcessFlagsInvalid(t *testing.T) {
 	flags, err := processFlags(ctx, &artifact.Artifact{}, []string{}, source, "-testflag=")
 	require.EqualError(t, err, expected)
 	require.Nil(t, flags)
-}
-
-func TestJoinLdFlags(t *testing.T) {
-	tests := []struct {
-		input  []string
-		output string
-	}{
-		{[]string{"-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser"}, "-ldflags=-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser"},
-		{[]string{"-s -w", "-X main.version={{.Version}}"}, "-ldflags=-s -w -X main.version={{.Version}}"},
-	}
-
-	for _, test := range tests {
-		joinedLdFlags := joinLdFlags(test.input)
-		require.Equal(t, joinedLdFlags, test.output)
-	}
 }
 
 func TestBuildModTimestamp(t *testing.T) {
@@ -815,13 +878,76 @@ func TestBuildModTimestamp(t *testing.T) {
 	}
 }
 
+func TestBuildGoBuildLine(t *testing.T) {
+	requireEqualCmd := func(tb testing.TB, build config.Build, expected []string) {
+		tb.Helper()
+		config := config.Project{
+			Builds: []config.Build{build},
+		}
+		ctx := context.New(config)
+		ctx.Version = "v1.2.3"
+		ctx.Git.Commit = "aaa"
+
+		line, err := buildGoBuildLine(ctx, config.Builds[0], api.Options{Path: "foo"}, &artifact.Artifact{}, []string{})
+		require.NoError(t, err)
+		require.Equal(t, expected, line)
+	}
+
+	t.Run("full", func(t *testing.T) {
+		requireEqualCmd(t, config.Build{
+			Main:     ".",
+			Asmflags: []string{"asmflag1", "asmflag2"},
+			Gcflags:  []string{"gcflag1", "gcflag2"},
+			Flags:    []string{"-flag1", "-flag2"},
+			Tags:     []string{"tag1", "tag2"},
+			Ldflags:  []string{"ldflag1", "ldflag2"},
+			GoBinary: "go",
+		}, []string{
+			"go", "build",
+			"-flag1", "-flag2",
+			"-asmflags=asmflag1", "-asmflags=asmflag2",
+			"-gcflags=gcflag1", "-gcflags=gcflag2",
+			"-tags=tag1,tag2",
+			"-ldflags=ldflag1 ldflag2",
+			"-o", "foo", ".",
+		})
+	})
+
+	t.Run("simple", func(t *testing.T) {
+		requireEqualCmd(t, config.Build{
+			Main:     ".",
+			GoBinary: "go",
+		}, strings.Fields("go build -o foo ."))
+	})
+
+	t.Run("ldflags1", func(t *testing.T) {
+		requireEqualCmd(t, config.Build{
+			Main:     ".",
+			Ldflags:  []string{"-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.builtBy=goreleaser"},
+			GoBinary: "go",
+		}, []string{
+			"go", "build",
+			"-ldflags=-s -w -X main.version=v1.2.3 -X main.commit=aaa -X main.builtBy=goreleaser",
+			"-o", "foo", ".",
+		})
+	})
+
+	t.Run("ldflags2", func(t *testing.T) {
+		requireEqualCmd(t, config.Build{
+			Main:     ".",
+			Ldflags:  []string{"-s -w", "-X main.version={{.Version}}"},
+			GoBinary: "go",
+		}, []string{"go", "build", "-ldflags=-s -w -X main.version=v1.2.3", "-o", "foo", "."})
+	})
+}
+
 //
 // Helpers
 //
 
 func writeMainWithoutMainFunc(t *testing.T, folder string) {
 	t.Helper()
-	require.NoError(t, ioutil.WriteFile(
+	require.NoError(t, os.WriteFile(
 		filepath.Join(folder, "main.go"),
 		[]byte("package main\nconst a = 2\nfunc notMain() {println(0)}"),
 		0o644,
@@ -830,7 +956,7 @@ func writeMainWithoutMainFunc(t *testing.T, folder string) {
 
 func writeGoodMain(t *testing.T, folder string) {
 	t.Helper()
-	require.NoError(t, ioutil.WriteFile(
+	require.NoError(t, os.WriteFile(
 		filepath.Join(folder, "main.go"),
 		[]byte("package main\nvar a = 1\nfunc main() {println(0)}"),
 		0o644,

@@ -1,12 +1,17 @@
+// Package exec can execute commands on the OS.
 package exec
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 
 	"github.com/apex/log"
 	"github.com/caarlos0/go-shellwords"
 	"github.com/goreleaser/goreleaser/internal/artifact"
+	"github.com/goreleaser/goreleaser/internal/gio"
 	"github.com/goreleaser/goreleaser/internal/logext"
 	"github.com/goreleaser/goreleaser/internal/pipe"
 	"github.com/goreleaser/goreleaser/internal/semerrgroup"
@@ -15,6 +20,10 @@ import (
 	"github.com/goreleaser/goreleaser/pkg/context"
 )
 
+// Environment variables to pass through to exec
+var passthroughEnvVars = []string{"HOME", "USER", "USERPROFILE", "TMPDIR", "TMP", "TEMP", "PATH"}
+
+// Execute the given publisher
 func Execute(ctx *context.Context, publishers []config.Publisher) error {
 	if ctx.SkipPublish {
 		return pipe.ErrSkipPublishEnabled
@@ -45,36 +54,48 @@ func executePublisher(ctx *context.Context, publisher config.Publisher) error {
 				return err
 			}
 
-			return executeCommand(c)
+			return executeCommand(c, artifact)
 		})
 	}
 
 	return g.Wait()
 }
 
-func executeCommand(c *command) error {
+func executeCommand(c *command, artifact *artifact.Artifact) error {
 	log.WithField("args", c.Args).
 		WithField("env", c.Env).
+		WithField("artifact", artifact.Name).
 		Debug("executing command")
 
-		// nolint: gosec
+	// nolint: gosec
 	cmd := exec.CommandContext(c.Ctx, c.Args[0], c.Args[1:]...)
-	cmd.Env = c.Env
+	cmd.Env = []string{}
+	for _, key := range passthroughEnvVars {
+		if value := os.Getenv(key); value != "" {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
+	cmd.Env = append(cmd.Env, c.Env...)
+
 	if c.Dir != "" {
 		cmd.Dir = c.Dir
 	}
 
-	entry := log.WithField("cmd", c.Args[0])
-	cmd.Stderr = logext.NewErrWriter(entry)
-	cmd.Stdout = logext.NewWriter(entry)
+	fields := log.Fields{
+		"cmd":      c.Args[0],
+		"artifact": artifact.Name,
+	}
+	var b bytes.Buffer
+	w := gio.Safe(&b)
+	cmd.Stderr = io.MultiWriter(logext.NewWriter(fields, logext.Error), w)
+	cmd.Stdout = io.MultiWriter(logext.NewWriter(fields, logext.Info), w)
 
-	log.WithField("cmd", cmd.Args).Info("publishing")
+	log.WithFields(fields).Info("publishing")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("publishing: %s failed: %w",
-			c.Args[0], err)
+		return fmt.Errorf("publishing: %s failed: %w: %s", c.Args[0], err, b.String())
 	}
 
-	log.Debugf("command %s finished successfully", c.Args[0])
+	log.WithFields(fields).Debugf("command %s finished successfully", c.Args[0])
 	return nil
 }
 
@@ -84,6 +105,8 @@ func filterArtifacts(artifacts artifact.Artifacts, publisher config.Publisher) [
 		artifact.ByType(artifact.UploadableFile),
 		artifact.ByType(artifact.LinuxPackage),
 		artifact.ByType(artifact.UploadableBinary),
+		artifact.ByType(artifact.DockerImage),
+		artifact.ByType(artifact.DockerManifest),
 	}
 
 	if publisher.Checksum {
@@ -91,7 +114,7 @@ func filterArtifacts(artifacts artifact.Artifacts, publisher config.Publisher) [
 	}
 
 	if publisher.Signature {
-		filters = append(filters, artifact.ByType(artifact.Signature))
+		filters = append(filters, artifact.ByType(artifact.Signature), artifact.ByType(artifact.Certificate))
 	}
 
 	filter := artifact.Or(filters...)

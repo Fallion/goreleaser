@@ -14,8 +14,6 @@ theme:
   favicon: static/favicon.ico
   include_search_page: false
   search_index_only: true
-  features:
-    - navigation.instant
   palette:
     - media: "(prefers-color-scheme: light)"  # Light mode
       scheme: default
@@ -24,16 +22,18 @@ theme:
         name: Switch to light mode
     - media: "(prefers-color-scheme: dark)"  # Dark mode
       scheme: slate
+      primary: light blue
+      accent: indigo
       toggle:
         icon: material/lightbulb
         name: Switch to dark mode
+  features:
+    - search.suggest
+    - search.highlight
+    - search.share
 
 plugins:
-  # disable temporarely because its freezing the page
-  - search:
-      prebuild_index: python
-      lang:
-      - en
+  - search
   - minify:
       minify_html: true
 
@@ -44,22 +44,23 @@ extra:
     - icon: fontawesome/brands/twitter
       link: https://twitter.com/goreleaser
 
-google_analytics:
-  - UA-106198408-1
-  - auto
-
 nav:
 - Home: index.md
 - intro.md
 - install.md
 - quick-start.md
-- environment.md
+- how-it-works.md
 - Limitations:
   - limitations/cgo.md
   - limitations/semver.md
+- SCM:
+  - scm/github.md
+  - scm/gitlab.md
+  - scm/gitea.md
 - Continuous Integration:
   - About: ci/index.md
   - ci/actions.md
+  - ci/azurepipelines.md
   - ci/circle.md
   - ci/cirrus.md
   - ci/cloudbuild.md
@@ -71,42 +72,80 @@ nav:
   - ci/travis.md
 - Customization:
   - About: customization/index.md
-  - customization/archive.md
-  - customization/artifactory.md
-  - customization/bintray.md
-  - customization/blob.md
-  - customization/gomod.md
-  - customization/build.md
-  - customization/checksum.md
-  - customization/publishers.md
-  - customization/docker.md
-  - customization/docker_manifest.md
-  - customization/env.md
-  - customization/hooks.md
-  - customization/homebrew.md
-  - customization/upload.md
-  - customization/templates.md
-  - customization/milestone.md
-  - customization/nfpm.md
-  - customization/project.md
-  - customization/release.md
-  - customization/scoop.md
-  - customization/sign.md
-  - customization/snapcraft.md
-  - customization/snapshots.md
-  - customization/source.md
+  - Basics:
+    - customization/includes.md
+    - customization/templates.md
+    - customization/env.md
+    - customization/hooks.md
+    - customization/dist.md
+    - customization/project.md
+  - Build:
+    - customization/build.md
+    - customization/gomod.md
+    - customization/monorepo.md
+    - customization/universalbinaries.md
+  - Packaging and Archiving:
+    - customization/archive.md
+    - customization/nfpm.md
+    - customization/checksum.md
+    - customization/snapcraft.md
+    - customization/docker.md
+    - customization/docker_manifest.md
+  - Signing:
+    - Checksums and artifacts: customization/sign.md
+    - Docker Images and Manifests: customization/docker_sign.md
+  - Publish:
+    - customization/release.md
+    - customization/blob.md
+    - customization/fury.md
+    - customization/homebrew.md
+    - customization/gofish.md
+    - customization/krew.md
+    - customization/scoop.md
+    - customization/changelog.md
+    - customization/upload.md
+    - customization/source.md
+    - customization/publishers.md
+    - customization/artifactory.md
+    - customization/milestone.md
+    - customization/snapshots.md
+    - customization/nightly.md
+  - Announce:
+      - About: customization/announce/index.md
+      - customization/announce/discord.md
+      - customization/announce/linkedin.md
+      - customization/announce/mattermost.md
+      - customization/announce/reddit.md
+      - customization/announce/slack.md
+      - customization/announce/smtp.md
+      - customization/announce/teams.md
+      - customization/announce/telegram.md
+      - customization/announce/twitter.md
+- Command Line Usage:
+    - goreleaser: cmd/goreleaser.md
+    - goreleaser init: cmd/goreleaser_init.md
+    - goreleaser check: cmd/goreleaser_check.md
+    - goreleaser build: cmd/goreleaser_build.md
+    - goreleaser release: cmd/goreleaser_release.md
+    - goreleaser completion: cmd/goreleaser_completion.md
+    - goreleaser jsonschema: cmd/goreleaser_jsonschema.md
 - deprecations.md
-- sponsors.md
-- contributing.md
 - Cookbooks:
   - About: cookbooks/index.md
   - Blog Posts: cookbooks/blog-posts.md
+  - Add a new cookbook: cookbooks/contributing.md
   - cookbooks//build-go-modules.md
-  - cookbooks/semantic-release.md
-  - cookbooks/release-a-library.md
-  - cookbooks/publish-to-nexus.md
   - cookbooks/cgo-and-crosscompiling.md
   - cookbooks/debconf-templates.md
+  - cookbooks/publish-to-nexus.md
+  - cookbooks/release-a-library.md
+  - cookbooks/semantic-release.md
+  - cookbooks/set-a-custom-git-tag.md
+  - cookbooks/using-main.version.md
+- pro.md
+- sponsors.md
+- users.md
+- contributing.md
 - links.md
 
 markdown_extensions:
@@ -117,3 +156,6 @@ markdown_extensions:
       permalink: true
   - pymdownx.tabbed
   - pymdownx.superfences
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - footnotes

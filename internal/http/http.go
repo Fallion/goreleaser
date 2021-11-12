@@ -121,13 +121,13 @@ func getUsername(ctx *context.Context, upload *config.Upload, kind string) strin
 		return upload.Username
 	}
 
-	var key = fmt.Sprintf("%s_%s_USERNAME", strings.ToUpper(kind), strings.ToUpper(upload.Name))
+	key := fmt.Sprintf("%s_%s_USERNAME", strings.ToUpper(kind), strings.ToUpper(upload.Name))
 	return ctx.Env[key]
 }
 
 // password is optional
 func getPassword(ctx *context.Context, upload *config.Upload, kind string) string {
-	var key = fmt.Sprintf("%s_%s_SECRET", strings.ToUpper(kind), strings.ToUpper(upload.Name))
+	key := fmt.Sprintf("%s_%s_SECRET", strings.ToUpper(kind), strings.ToUpper(upload.Name))
 	return ctx.Env[key]
 }
 
@@ -141,10 +141,6 @@ type ResponseChecker func(*h.Response) error
 
 // Upload does the actual uploading work.
 func Upload(ctx *context.Context, uploads []config.Upload, kind string, check ResponseChecker) error {
-	if ctx.SkipPublish {
-		return pipe.ErrSkipPublishEnabled
-	}
-
 	// Handle every configured upload
 	for _, upload := range uploads {
 		upload := upload
@@ -153,7 +149,7 @@ func Upload(ctx *context.Context, uploads []config.Upload, kind string, check Re
 			filters = append(filters, artifact.ByType(artifact.Checksum))
 		}
 		if upload.Signature {
-			filters = append(filters, artifact.ByType(artifact.Signature))
+			filters = append(filters, artifact.ByType(artifact.Signature), artifact.ByType(artifact.Certificate))
 		}
 		// We support two different modes
 		//	- "archive": Upload all artifacts
@@ -176,7 +172,7 @@ func Upload(ctx *context.Context, uploads []config.Upload, kind string, check Re
 			return err
 		}
 
-		var filter = artifact.Or(filters...)
+		filter := artifact.Or(filters...)
 		if len(upload.IDs) > 0 {
 			filter = artifact.And(filter, artifact.ByIDs(upload.IDs...))
 		}
@@ -189,9 +185,9 @@ func Upload(ctx *context.Context, uploads []config.Upload, kind string, check Re
 }
 
 func uploadWithFilter(ctx *context.Context, upload *config.Upload, filter artifact.Filter, kind string, check ResponseChecker) error {
-	var artifacts = ctx.Artifacts.Filter(filter).List()
+	artifacts := ctx.Artifacts.Filter(filter).List()
 	log.Debugf("will upload %d artifacts", len(artifacts))
-	var g = semerrgroup.New(ctx.Parallelism)
+	g := semerrgroup.New(ctx.Parallelism)
 	for _, artifact := range artifacts {
 		artifact := artifact
 		g.Go(func() error {
@@ -233,7 +229,7 @@ func uploadAsset(ctx *context.Context, upload *config.Upload, artifact *artifact
 	}
 	log.Debugf("generated target url: %s", targetURL)
 
-	var headers = map[string]string{}
+	headers := map[string]string{}
 	if upload.CustomHeaders != nil {
 		for name, value := range upload.CustomHeaders {
 			resolvedValue, err := resolveHeaderTemplate(ctx, upload, artifact, value)
@@ -364,7 +360,7 @@ func executeHTTPRequest(ctx *context.Context, upload *config.Upload, req *h.Requ
 // resolveTargetTemplate returns the resolved target template with replaced variables
 // Those variables can be replaced by the given context, goos, goarch, goarm and more.
 func resolveTargetTemplate(ctx *context.Context, upload *config.Upload, artifact *artifact.Artifact) (string, error) {
-	var replacements = map[string]string{}
+	replacements := map[string]string{}
 	if upload.Mode == ModeBinary {
 		// TODO: multiple archives here
 		replacements = ctx.Config.Archives[0].Replacements
@@ -377,7 +373,7 @@ func resolveTargetTemplate(ctx *context.Context, upload *config.Upload, artifact
 // resolveHeaderTemplate returns the resolved custom header template with replaced variables
 // Those variables can be replaced by the given context, goos, goarch, goarm and more.
 func resolveHeaderTemplate(ctx *context.Context, upload *config.Upload, artifact *artifact.Artifact, headerValue string) (string, error) {
-	var replacements = map[string]string{}
+	replacements := map[string]string{}
 	if upload.Mode == ModeBinary {
 		// TODO: multiple archives here
 		replacements = ctx.Config.Archives[0].Replacements

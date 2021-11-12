@@ -13,6 +13,7 @@ import (
 )
 
 func TestWithArtifact(t *testing.T) {
+	t.Parallel()
 	ctx := context.New(config.Project{
 		ProjectName: "proj",
 	})
@@ -31,6 +32,7 @@ func TestWithArtifact(t *testing.T) {
 	ctx.Git.Commit = "commit"
 	ctx.Git.FullCommit = "fullcommit"
 	ctx.Git.ShortCommit = "shortcommit"
+	ctx.ReleaseNotes = "test release notes"
 	for expect, tmpl := range map[string]string{
 		"bar":                              "{{.Env.FOO}}",
 		"Linux":                            "{{.Os}}",
@@ -46,8 +48,14 @@ func TestWithArtifact(t *testing.T) {
 		"shortcommit":                      "{{.ShortCommit}}",
 		"binary":                           "{{.Binary}}",
 		"proj":                             "{{.ProjectName}}",
-		"":                                 "{{.ArtifactUploadHash}}",
 		"github.com/goreleaser/goreleaser": "{{ .ModulePath }}",
+		"v2.0.0":                           "{{.Tag | incmajor }}",
+		"2.0.0":                            "{{.Version | incmajor }}",
+		"v1.3.0":                           "{{.Tag | incminor }}",
+		"1.3.0":                            "{{.Version | incminor }}",
+		"v1.2.4":                           "{{.Tag | incpatch }}",
+		"1.2.4":                            "{{.Version | incpatch }}",
+		"test release notes":               "{{ .ReleaseNotes }}",
 	} {
 		tmpl := tmpl
 		expect := expect
@@ -61,7 +69,7 @@ func TestWithArtifact(t *testing.T) {
 					Goarm:  "6",
 					Gomips: "softfloat",
 					Extra: map[string]interface{}{
-						"Binary": "binary",
+						artifact.ExtraBinary: "binary",
 					},
 				},
 				map[string]string{"linux": "Linux"},
@@ -70,24 +78,6 @@ func TestWithArtifact(t *testing.T) {
 			require.Equal(t, expect, result)
 		})
 	}
-
-	t.Run("artifact with gitlab ArtifactUploadHash", func(t *testing.T) {
-		t.Parallel()
-		uploadHash := "820ead5d9d2266c728dce6d4d55b6460"
-		result, err := New(ctx).WithArtifact(
-			&artifact.Artifact{
-				Name:   "another-binary",
-				Goarch: "amd64",
-				Goos:   "linux",
-				Goarm:  "6",
-				Extra: map[string]interface{}{
-					"ArtifactUploadHash": uploadHash,
-				},
-			}, map[string]string{},
-		).Apply("{{ .ArtifactUploadHash }}")
-		require.NoError(t, err)
-		require.Equal(t, uploadHash, result)
-	})
 
 	t.Run("artifact without binary name", func(t *testing.T) {
 		t.Parallel()
@@ -158,10 +148,15 @@ func TestWithEnv(t *testing.T) {
 func TestFuncMap(t *testing.T) {
 	ctx := context.New(config.Project{
 		ProjectName: "proj",
+		Env: []string{
+			"FOO=bar",
+		},
 	})
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 
+	ctx.Git.URL = "https://github.com/foo/bar.git"
+	ctx.ReleaseURL = "https://github.com/foo/bar/releases/tag/v1.0.0"
 	ctx.Git.CurrentTag = "v1.2.4"
 	for _, tc := range []struct {
 		Template string
@@ -172,6 +167,16 @@ func TestFuncMap(t *testing.T) {
 			Template: `{{ replace "v1.24" "v" "" }}`,
 			Name:     "replace",
 			Expected: "1.24",
+		},
+		{
+			Template: `{{ if index .Env "SOME_ENV"  }}{{ .Env.SOME_ENV }}{{ else }}default value{{ end }}`,
+			Name:     "default value",
+			Expected: "default value",
+		},
+		{
+			Template: `{{ if index .Env "FOO"  }}{{ .Env.FOO }}{{ else }}default value{{ end }}`,
+			Name:     "default value set",
+			Expected: "bar",
 		},
 		{
 			Template: `{{ time "2006-01-02" }}`,
@@ -194,6 +199,16 @@ func TestFuncMap(t *testing.T) {
 			Template: `{{ trimprefix "v1.2.4" "v" }}`,
 			Name:     "trimprefix",
 			Expected: "1.2.4",
+		},
+		{
+			Template: `{{ trimsuffix .GitURL ".git" }}`,
+			Name:     "trimsuffix",
+			Expected: "https://github.com/foo/bar",
+		},
+		{
+			Template: `{{ .ReleaseURL }}`,
+			Name:     "trimsuffix",
+			Expected: "https://github.com/foo/bar/releases/tag/v1.0.0",
 		},
 		{
 			Template: `{{ toupper "test" }}`,

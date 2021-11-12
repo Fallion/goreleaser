@@ -1,7 +1,6 @@
 package git
 
 import (
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,10 +93,11 @@ func TestDirty(t *testing.T) {
 	testlib.GitRemoteAdd(t, "git@github.com:foo/bar.git")
 	dummy, err := os.Create(filepath.Join(folder, "dummy"))
 	require.NoError(t, err)
+	require.NoError(t, dummy.Close())
 	testlib.GitAdd(t)
 	testlib.GitCommit(t, "commit2")
 	testlib.GitTag(t, "v0.0.1")
-	require.NoError(t, ioutil.WriteFile(dummy.Name(), []byte("lorem ipsum"), 0o644))
+	require.NoError(t, os.WriteFile(dummy.Name(), []byte("lorem ipsum"), 0o644))
 	t.Run("all checks up", func(t *testing.T) {
 		err := Pipe{}.Run(context.New(config.Project{}))
 		require.Error(t, err)
@@ -113,6 +113,28 @@ func TestDirty(t *testing.T) {
 		ctx.Snapshot = true
 		testlib.AssertSkipped(t, Pipe{}.Run(ctx))
 	})
+}
+
+func TestRemoteURLContainsWithUsernameAndToken(t *testing.T) {
+	testlib.Mktmp(t)
+	testlib.GitInit(t)
+	testlib.GitRemoteAdd(t, "https://gitlab-ci-token:SyYhsAghYFTvMoxw7GAg@gitlab.private.com/platform/base/poc/kink.git/releases/tag/v0.1.4")
+	testlib.GitAdd(t)
+	testlib.GitCommit(t, "commit2")
+	testlib.GitTag(t, "v0.0.1")
+	ctx := context.New(config.Project{})
+	require.NoError(t, Pipe{}.Run(ctx))
+}
+
+func TestRemoteURLContainsWithUsernameAndTokenWithInvalidURL(t *testing.T) {
+	testlib.Mktmp(t)
+	testlib.GitInit(t)
+	testlib.GitRemoteAdd(t, "https://gitlab-ci-token:SyYhsAghYFTvMoxw7GAggitlab.com/platform/base/poc/kink.git/releases/tag/v0.1.4")
+	testlib.GitAdd(t)
+	testlib.GitCommit(t, "commit2")
+	testlib.GitTag(t, "v0.0.1")
+	ctx := context.New(config.Project{})
+	require.Error(t, Pipe{}.Run(ctx))
 }
 
 func TestShallowClone(t *testing.T) {
@@ -206,7 +228,7 @@ func TestSnapshotDirty(t *testing.T) {
 	testlib.GitAdd(t)
 	testlib.GitCommit(t, "whatever")
 	testlib.GitTag(t, "v0.0.1")
-	require.NoError(t, ioutil.WriteFile(filepath.Join(folder, "foo"), []byte("foobar"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(folder, "foo"), []byte("foobar"), 0o644))
 	ctx := context.New(config.Project{})
 	ctx.Snapshot = true
 	testlib.AssertSkipped(t, Pipe{}.Run(ctx))
@@ -233,10 +255,7 @@ func TestTagFromCI(t *testing.T) {
 		envs     map[string]string
 		expected string
 	}{
-		// It is not possible to concisely figure out the tag if a commit has more than one tags. Git always
-		// returns the tags in lexicographical order (ASC), which implies that we expect v0.0.1 here.
-		// More details: https://github.com/goreleaser/goreleaser/issues/1163
-		{expected: "v0.0.1"},
+		{expected: "v0.0.2"},
 		{
 			envs:     map[string]string{"GORELEASER_CURRENT_TAG": "v0.0.2"},
 			expected: "v0.0.2",

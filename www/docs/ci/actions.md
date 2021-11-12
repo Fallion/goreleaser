@@ -1,6 +1,4 @@
----
-title: GitHub Actions
----
+# GitHub Actions
 
 GoReleaser can also be used within our official [GoReleaser Action][goreleaser-action]
 through [GitHub Actions][actions].
@@ -21,6 +19,9 @@ on:
   pull_request:
   push:
 
+permissions:
+  contents: write
+
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
@@ -34,15 +35,19 @@ jobs:
         name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.16
+          go-version: 1.17
       -
         name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v2
         with:
+          # either 'goreleaser' (default) or 'goreleaser-pro'
+          distribution: goreleaser
           version: latest
           args: release --rm-dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Your GoReleaser Pro key, if you are using the 'goreleaser-pro' distribution
+          # GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
 ```
 
 !!! warning
@@ -86,9 +91,9 @@ GitHub Action along with this one:
       -
         name: Import GPG key
         id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@v3
+        uses: crazy-max/ghaction-import-gpg@v4
         with:
-          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
       -
         name: Run GoReleaser
@@ -115,11 +120,13 @@ signs:
 
 Following inputs can be used as `step.with` keys
 
-| Name      | Type   | Default  | Description                               |
-|-----------|--------|----------|-------------------------------------------|
-| `version`¹| String | `latest` | GoReleaser version. Example: `v0.117.0`   |
-| `args`    | String |          | Arguments to pass to GoReleaser           |
-| `workdir` | String | `.`      | Working directory (below repository root) |
+| Name             | Type    | Default      | Description                                                      |
+|------------------|---------|--------------|------------------------------------------------------------------|
+| `distribution`   | String  | `goreleaser` | GoReleaser distribution, either `goreleaser` or `goreleaser-pro` |
+| `version`**¹**   | String  | `latest`     | GoReleaser version                                               |
+| `args`           | String  |              | Arguments to pass to GoReleaser                                  |
+| `workdir`        | String  | `.`          | Working directory (below repository root)                        |
+| `install-only`   | Bool    | `false`      | Just install GoReleaser                                          |
 
 !!! info
     ¹: Can be a fixed version like `v0.117.0` or a max satisfying SemVer one
@@ -129,11 +136,21 @@ Following inputs can be used as `step.with` keys
 
 Following environment variables can be used as `step.env` keys
 
-| Name           | Description                                           |
-|----------------|-------------------------------------------------------|
-| `GITHUB_TOKEN` | [GITHUB_TOKEN][github-token] as provided by `secrets` |
+| Name             | Description                           |
+|------------------|---------------------------------------|
+| `GITHUB_TOKEN`   | [GITHUB_TOKEN](https://help.github.com/en/actions/configuring-and-managing-workflows/authenticating-with-the-github_token) as provided by `secrets` |
+| `GORELEASER_KEY` | Your [GoReleaser Pro](https://goreleaser.com/pro) License Key, in case you are using the `goreleaser-pro` distribution                              |
 
-## Limitations
+## Token Permissions
+
+The following [permissions](https://docs.github.com/en/actions/reference/authentication-in-a-workflow#permissions-for-the-github_token) are required by GoReleaser:
+
+ - `content: write` if you wish to
+    - [upload archives as GitHub Releases](/customization/release/), or
+    - publish to [Homebrew](/customization/homebrew/), or [Scoop](/customization/scoop/) (assuming it's part of the same repository)
+ - or just `content: read` if you don't need any of the above
+ - `packages: write` if you [push Docker images](/customization/docker/) to GitHub
+ - `issues: write` if you use [milestone closing capability](/customization/milestone/)
 
 `GITHUB_TOKEN` permissions [are limited to the repository][about-github-token] that contains your workflow.
 

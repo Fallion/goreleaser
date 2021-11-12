@@ -1,6 +1,4 @@
----
-title: NFPM
----
+# Linux packages (via nFPM)
 
 GoReleaser can be wired to [nfpm](https://github.com/goreleaser/nfpm) to
 generate and publish `.deb`, `.rpm` and `.apk` packages.
@@ -21,8 +19,9 @@ nfpms:
     package_name: foo
 
     # You can change the file name of the package.
+    #
     # Default: `{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}`
-    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    file_name_template: "{{ .ConventionalFileName }}"
 
     # Build IDs for the builds you want to create NFPM packages for.
     # Defaults to all builds.
@@ -43,7 +42,8 @@ nfpms:
     # Your app's vendor.
     # Default is empty.
     vendor: Drum Roll Inc.
-    # Your app's homepage.
+
+    # Template to your app's homepage.
     # Default is empty.
     homepage: https://example.com/
 
@@ -51,7 +51,7 @@ nfpms:
     # Default is empty.
     maintainer: Drummer <drum-roll@example.com>
 
-    # Your app's description.
+    # Template to your app's description.
     # Default is empty.
     description: Software to create fast and easy drum rolls.
 
@@ -89,7 +89,8 @@ nfpms:
     replaces:
       - fish
 
-    # Override default /usr/local/bin destination for binaries
+    # Template to the path that the binaries should be installed.
+    # Defaults to `/usr/local/bin`.
     bindir: /usr/bin
 
     # Version Epoch.
@@ -147,6 +148,10 @@ nfpms:
       - src: path/to/local/bar.conf
         dst: /etc/bar.conf
         type: "config|noreplace"
+
+      # The src and dst attributes also supports name templates
+      - src: path/{{ .Os }}-{{ .Arch }}/bar.conf
+        dst: /etc/foo/bar-{{ .ProjectName }}.conf
 
       # These files are not actually present in the package, but the file names
       # are added to the package header. From the RPM directives documentation:
@@ -216,7 +221,7 @@ nfpms:
       rpm:
         replacements:
           amd64: x86_64
-        name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Arch }}"
+        file_name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Arch }}"
         files:
           "tmp/man.gz": "/usr/share/man/man8/app.8.gz"
         config_files:
@@ -224,8 +229,15 @@ nfpms:
         scripts:
           preinstall: "scripts/preinstall-rpm.sh"
 
-    # Custon configuration applied only to the RPM packager.
+    # Custom configuration applied only to the RPM packager.
     rpm:
+      # RPM specific scripts.
+      scripts:
+        # The pretrans script runs before all RPM package transactions / stages.
+        pretrans: ./scripts/pretrans.sh
+        # The posttrans script runs after all RPM package transactions / stages.
+        posttrans: ./scripts/posttrans.sh
+
       # The package summary.
       # Defaults to the first line of the description.
       summary: Explicit Summary for Sample Package
@@ -258,13 +270,14 @@ nfpms:
 
       # The package is signed if a key_file is set
       signature:
-        # PGP secret key (can also be ASCII-armored). The passphrase is taken
-        # from the environment variable $NFPM_ID_RPM_PASSPHRASE with a fallback
-        # to $NFPM_ID_PASSPHRASE, where ID is the id of the current nfpm config.
+        # Template to the PGP secret key file path (can also be ASCII-armored).
+        # The passphrase is taken from the environment variable
+        # `$NFPM_ID_RPM_PASSPHRASE` with a fallback to `$NFPM_ID_PASSPHRASE`,
+        # where ID is the id of the current nfpm config.
         # The id will be transformed to uppercase.
         # E.g. If your nfpm id is 'default' then the rpm-specific passphrase
-        # should be set as $NFPM_DEFAULT_RPM_PASSPHRASE
-        key_file: key.gpg
+        # should be set as `$NFPM_DEFAULT_RPM_PASSPHRASE`
+        key_file: '{{ .Env.GPG_KEY_PATH }}'
 
     # Custom configuration applied only to the Deb packager.
     deb:
@@ -294,27 +307,39 @@ nfpms:
 
       # The package is signed if a key_file is set
       signature:
-        # PGP secret key (can also be ASCII-armored). The passphrase is taken
-        # from the environment variable $NFPM_ID_DEB_PASSPHRASE with a fallback
-        # to $NFPM_ID_PASSPHRASE, where ID is the id of the current nfpm config.
+        # Template to the PGP secret key file path (can also be ASCII-armored).
+        # The passphrase is taken from the environment variable
+        # `$NFPM_ID_DEB_PASSPHRASE` with a fallback to `$NFPM_ID_PASSPHRASE`,
+        # where ID is the id of the current nfpm config.
         # The id will be transformed to uppercase.
         # E.g. If your nfpm id is 'default' then the deb-specific passphrase
-        # should be set as $NFPM_DEFAULT_DEB_PASSPHRASE
-        key_file: key.gpg
+        # should be set as `$NFPM_DEFAULT_DEB_PASSPHRASE`
+        key_file: '{{ .Env.GPG_KEY_PATH }}'
+
         # The type describes the signers role, possible values are "origin",
         # "maint" and "archive". If unset, the type defaults to "origin".
         type: origin
 
     apk:
+      # APK specific scripts.
+      scripts:
+        # The preupgrade script runs before APK upgrade.
+        preupgrade: ./scripts/preupgrade.sh
+        # The postupgrade script runs after APK.
+        postupgrade: ./scripts/postupgrade.sh
+
       # The package is signed if a key_file is set
       signature:
-        # RSA private key in the PEM format. The passphrase is taken
-        # from the environment variable $NFPM_ID_APK_PASSPHRASE with a fallback
-        # to $NFPM_ID_PASSPHRASE, where ID is the id of the current nfpm config.
+        # Template to the PGP secret key file path (can also be ASCII-armored).
+        # The passphrase is taken from the environment variable
+        # `$NFPM_ID_APK_PASSPHRASE` with a fallback to `$NFPM_ID_PASSPHRASE`,
+        # where ID is the id of the current nfpm config.
         # The id will be transformed to uppercase.
-        # E.g. If your nfpm id is 'default' then the deb-specific passphrase
-        # should be set as $NFPM_DEFAULT_APK_PASSPHRASE
-        key_file: key.gpg
+        # E.g. If your nfpm id is 'default' then the apk-specific passphrase
+        # should be set as `$NFPM_DEFAULT_APK_PASSPHRASE`
+        key_file: '{{ .Env.GPG_KEY_PATH }}'
+
+
         # The name of the signing key. When verifying a package, the signature
         # is matched to the public key store in /etc/apk/keys/<key_name>.rsa.pub.
         # If unset, it defaults to the maintainer email address.

@@ -1,9 +1,7 @@
----
-title: Docker
----
+# Docker Images
 
-Since [v0.31.0](https://github.com/goreleaser/goreleaser/releases/tag/v0.31.0),
-GoReleaser supports building and pushing Docker images.
+GoReleaser can build and push Docker images.
+Let's see how it works.
 
 ## How it works
 
@@ -35,7 +33,7 @@ COPY mybin /
 This configuration will build and push a Docker image named `user/repo:tagname`.
 
 !!! warning
-    Note that we are not building any go files in the docker
+    Note that we are not building any go files in the Docker
     build phase, we are merely copying the binary to a `scratch` image and
     setting up the `entrypoint`.
 
@@ -48,6 +46,9 @@ Of course, you can customize a lot of things:
 dockers:
   # You can have multiple Docker images.
   -
+    # ID of the image, needed if you want to filter by it later on (e.g. on custom publishers).
+    id: myimg
+
     # GOOS of the built binaries/packages that should be used.
     goos: linux
 
@@ -70,20 +71,23 @@ dockers:
     - "myuser/myimage:v{{ .Major }}"
     - "gcr.io/myuser/myimage:latest"
 
-    # Skips the docker push. Could be useful if you also do draft releases.
-    # If set to auto, the release will not be pushed to the docker repository
-    # in case there is an indicator for prerelease in the tag e.g. v1.0.0-rc1
+    # Skips the docker push.
+    # Could be useful if you also do draft releases.
+    #
+    # If set to auto, the release will not be pushed to the Docker repository
+    #  in case there is an indicator of a prerelease in the tag, e.g. v1.0.0-rc1.
+    #
     # Defaults to false.
     skip_push: false
 
     # Path to the Dockerfile (from the project root).
     dockerfile: Dockerfile
 
-    # Whether to use `docker buildx build` instead of `docker build`.
-    # You probably want to set it to true when using flags like `--platform`.
-    # If true, will also add `--load` to the build flags.
-    # Defaults to false.
-    use_buildx: true
+    # Set the "backend" for the Docker pipe.
+    # Valid options are: docker, buildx, podman, buildpacks
+    # podman is a GoReleaser Pro feature and is only available on Linux.
+    # Defaults to docker.
+    use: docker
 
     # Template of the docker build flags.
     build_flag_templates:
@@ -94,6 +98,11 @@ dockers:
     - "--label=org.opencontainers.image.version={{.Version}}"
     - "--build-arg=FOO={{.Env.Bar}}"
     - "--platform=linux/arm64"
+
+    # Extra flags to be passed down to the push command.
+    # Defaults to empty.
+    push_flags:
+    - --tls-verify=false
 
     # If your Dockerfile copies files other than binaries and packages,
     # you should list them here as well.
@@ -133,7 +142,7 @@ dockers:
     - "myuser/{{.ProjectName}}"
 ```
 
-This will build and public the following images:
+This will build and publish the following images:
 
 - `myuser/foo`
 
@@ -142,7 +151,7 @@ This will build and public the following images:
 
 ## Keeping docker images updated for current major
 
-Some users might want to when version to push docker tags `:v1`, `:v1.6`,
+Some users might want to push docker tags `:v1`, `:v1.6`,
 `:v1.6.4` and `:latest` when `v1.6.4` (for example) is built. That can be
 accomplished by using multiple `image_templates`:
 
@@ -193,10 +202,10 @@ This will build and publish the following images to `docker.io` and `gcr.io`:
 - `gcr.io/myuser/myimage:v1.6.4`
 - `gcr.io/myuser/myimage:latest`
 
-## Applying docker build flags
+## Applying Docker build flags
 
-Build flags can be applied using `build_flag_templates`. The flags must be
-valid docker build flags.
+Build flags can be applied using `build_flag_templates`.
+The flags must be valid Docker build flags.
 
 ```yaml
 # .goreleaser.yml
@@ -225,3 +234,48 @@ docker build -t myuser/myimage . \
 
 !!! tip
     Learn more about the [name template engine](/customization/templates/).
+
+## Podman
+
+!!! success "GoReleaser Pro"
+    The podman backend is a [GoReleaser Pro feature](/pro/).
+
+You can use [`podman`](https://podman.io) instead of `docker` by setting `use` to `podman` on your config:
+
+```yaml
+# .goreleaser.yml
+dockers:
+  -
+    image_templates:
+    - "myuser/myimage"
+    use: podman
+```
+
+Note that GoReleaser will not install Podman for you, nor change any of its configuration.
+
+## Buildpacks
+
+You can use [`buildpacks`](https://buildpacks.io) instead of `docker` by setting `use` to `buildpacks` on your config:
+
+```yaml
+# .goreleaser.yml
+dockers:
+  -
+    image_templates:
+    - "myuser/myimage"
+    use: buildpacks
+```
+
+Also, you can use a custom buildpack on `build_flag_templates` if you want.
+By default, `gcr.io/buildpacks/builder:v1` will be used.
+
+```yaml
+# .goreleaser.yml
+dockers:
+  -
+    image_templates:
+    - "myuser/myimage"
+    use: buildpacks
+    build_flag_templates:
+    - "--builder=heroku/buildpacks:20"
+```

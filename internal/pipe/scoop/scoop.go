@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -13,33 +16,37 @@ import (
 	"github.com/goreleaser/goreleaser/internal/client"
 	"github.com/goreleaser/goreleaser/internal/pipe"
 	"github.com/goreleaser/goreleaser/internal/tmpl"
+	"github.com/goreleaser/goreleaser/pkg/config"
 	"github.com/goreleaser/goreleaser/pkg/context"
 )
 
 // ErrNoWindows when there is no build for windows (goos doesn't contain windows).
 var ErrNoWindows = errors.New("scoop requires a windows build")
 
-// ErrTokenTypeNotImplementedForScoop indicates that a new token type was not implemented for this pipe.
-var ErrTokenTypeNotImplementedForScoop = errors.New("token type not implemented for scoop pipe")
+const scoopConfigExtra = "ScoopConfig"
 
-// Pipe for build.
+// Pipe that builds and publishes scoop manifests.
 type Pipe struct{}
 
-func (Pipe) String() string {
-	return "scoop manifests"
-}
+func (Pipe) String() string                 { return "scoop manifests" }
+func (Pipe) Skip(ctx *context.Context) bool { return ctx.Config.Scoop.Bucket.Name == "" }
 
-// Publish scoop manifest.
-func (Pipe) Publish(ctx *context.Context) error {
-	if ctx.SkipPublish {
-		return pipe.ErrSkipPublishEnabled
-	}
-
+// Run creates the scoop manifest locally.
+func (Pipe) Run(ctx *context.Context) error {
 	client, err := client.New(ctx)
 	if err != nil {
 		return err
 	}
 	return doRun(ctx, client)
+}
+
+// Publish scoop manifest.
+func (Pipe) Publish(ctx *context.Context) error {
+	client, err := client.New(ctx)
+	if err != nil {
+		return err
+	}
+	return doPublish(ctx, client)
 }
 
 // Default sets the pipe defaults.
@@ -53,32 +60,14 @@ func (Pipe) Default(ctx *context.Context) error {
 	if ctx.Config.Scoop.CommitAuthor.Email == "" {
 		ctx.Config.Scoop.CommitAuthor.Email = "goreleaser@carlosbecker.com"
 	}
-
 	if ctx.Config.Scoop.CommitMessageTemplate == "" {
 		ctx.Config.Scoop.CommitMessageTemplate = "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
 	}
-
 	return nil
 }
 
 func doRun(ctx *context.Context, cl client.Client) error {
 	scoop := ctx.Config.Scoop
-	if scoop.Bucket.Name == "" {
-		return pipe.ErrSkipDisabledPipe
-	}
-
-	if scoop.Bucket.Token != "" {
-		token, err := tmpl.New(ctx).ApplySingleEnvOnly(scoop.Bucket.Token)
-		if err != nil {
-			return err
-		}
-		log.Debug("using custom token to publish scoop manifest")
-		c, err := client.NewWithToken(ctx, token)
-		if err != nil {
-			return err
-		}
-		cl = c
-	}
 
 	// TODO: multiple archives
 	if ctx.Config.Archives[0].Format == "binary" {
@@ -95,7 +84,7 @@ func doRun(ctx *context.Context, cl client.Client) error {
 		return ErrNoWindows
 	}
 
-	path := scoop.Name + ".json"
+	filename := scoop.Name + ".json"
 
 	data, err := dataFor(ctx, cl, archives)
 	if err != nil {
@@ -106,9 +95,38 @@ func doRun(ctx *context.Context, cl client.Client) error {
 		return err
 	}
 
-	if ctx.SkipPublish {
-		return pipe.ErrSkipPublishEnabled
+	path := filepath.Join(ctx.Config.Dist, filename)
+	log.WithField("manifest", path).Info("writing")
+	if err := os.WriteFile(path, content.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("failed to write scoop manifest: %w", err)
 	}
+
+	ctx.Artifacts.Add(&artifact.Artifact{
+		Name: filename,
+		Path: path,
+		Type: artifact.ScoopManifest,
+		Extra: map[string]interface{}{
+			scoopConfigExtra: scoop,
+		},
+	})
+	return nil
+}
+
+func doPublish(ctx *context.Context, cl client.Client) error {
+	manifests := ctx.Artifacts.Filter(artifact.ByType(artifact.ScoopManifest)).List()
+	if len(manifests) == 0 { // should never happen
+		return nil
+	}
+
+	manifest := manifests[0]
+	scoop := manifest.Extra[scoopConfigExtra].(config.Scoop)
+
+	var err error
+	cl, err = client.NewIfToken(ctx, cl, scoop.Bucket.Token)
+	if err != nil {
+		return err
+	}
+
 	if strings.TrimSpace(scoop.SkipUpload) == "true" {
 		return pipe.Skip("scoop.skip_upload is true")
 	}
@@ -122,8 +140,12 @@ func doRun(ctx *context.Context, cl client.Client) error {
 		return pipe.Skip("release is disabled")
 	}
 
-	commitMessage, err := tmpl.New(ctx).
-		Apply(scoop.CommitMessageTemplate)
+	commitMessage, err := tmpl.New(ctx).Apply(scoop.CommitMessageTemplate)
+	if err != nil {
+		return err
+	}
+
+	content, err := os.ReadFile(manifest.Path)
 	if err != nil {
 		return err
 	}
@@ -133,8 +155,8 @@ func doRun(ctx *context.Context, cl client.Client) error {
 		ctx,
 		scoop.CommitAuthor,
 		repo,
-		content.Bytes(),
-		path,
+		content,
+		path.Join(scoop.Folder, manifest.Name),
 		commitMessage,
 	)
 }
@@ -184,9 +206,6 @@ func dataFor(ctx *context.Context, cl client.Client, artifacts []*artifact.Artif
 	if ctx.Config.Scoop.URLTemplate == "" {
 		url, err := cl.ReleaseURLTemplate(ctx)
 		if err != nil {
-			if client.IsNotImplementedErr(err) {
-				return manifest, ErrTokenTypeNotImplementedForScoop
-			}
 			return manifest, err
 		}
 		ctx.Config.Scoop.URLTemplate = url
@@ -239,8 +258,8 @@ func dataFor(ctx *context.Context, cl client.Client, artifacts []*artifact.Artif
 func binaries(a *artifact.Artifact) []string {
 	// nolint: prealloc
 	var bins []string
-	wrap := a.ExtraOr("WrappedIn", "").(string)
-	for _, b := range a.ExtraOr("Builds", []*artifact.Artifact{}).([]*artifact.Artifact) {
+	wrap := a.ExtraOr(artifact.ExtraWrappedIn, "").(string)
+	for _, b := range a.ExtraOr(artifact.ExtraBuilds, []*artifact.Artifact{}).([]*artifact.Artifact) {
 		bins = append(bins, filepath.Join(wrap, b.Name))
 	}
 	return bins

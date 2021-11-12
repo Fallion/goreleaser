@@ -2,13 +2,12 @@ package snapcraft
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	"github.com/goreleaser/goreleaser/internal/artifact"
+	"github.com/goreleaser/goreleaser/internal/gio"
 	"github.com/goreleaser/goreleaser/internal/pipe"
 	"github.com/goreleaser/goreleaser/internal/testlib"
 	"github.com/goreleaser/goreleaser/pkg/config"
@@ -32,7 +31,7 @@ func TestRunPipeMissingInfo(t *testing.T) {
 		pipe.Skip("no summary nor description were provided"): {},
 	} {
 		t.Run(fmt.Sprintf("testing if %v happens", eerr), func(t *testing.T) {
-			var ctx = &context.Context{
+			ctx := &context.Context{
 				Config: config.Project{
 					Snapcrafts: []config.Snapcraft{
 						snap,
@@ -45,33 +44,37 @@ func TestRunPipeMissingInfo(t *testing.T) {
 }
 
 func TestRunPipe(t *testing.T) {
-	var folder = t.TempDir()
-	var dist = filepath.Join(folder, "dist")
-	require.NoError(t, os.Mkdir(dist, 0755))
-	var ctx = context.New(config.Project{
+	testlib.CheckPath(t, "snapcraft")
+	folder := t.TempDir()
+	dist := filepath.Join(folder, "dist")
+	require.NoError(t, os.Mkdir(dist, 0o755))
+	ctx := context.New(config.Project{
 		ProjectName: "mybin",
 		Dist:        dist,
 		Snapcrafts: []config.Snapcraft{
 			{
-				NameTemplate: "foo_{{.Arch}}",
-				Summary:      "test summary",
-				Description:  "test description",
-				Publish:      true,
-				Builds:       []string{"foo"},
+				NameTemplate:     "foo_{{.Arch}}",
+				Summary:          "test summary",
+				Description:      "test description",
+				Publish:          true,
+				Builds:           []string{"foo"},
+				ChannelTemplates: []string{"stable"},
 			},
 			{
-				NameTemplate: "foo_and_bar_{{.Arch}}",
-				Summary:      "test summary",
-				Description:  "test description",
-				Publish:      true,
-				Builds:       []string{"foo", "bar"},
+				NameTemplate:     "foo_and_bar_{{.Arch}}",
+				Summary:          "test summary",
+				Description:      "test description",
+				Publish:          true,
+				Builds:           []string{"foo", "bar"},
+				ChannelTemplates: []string{"stable"},
 			},
 			{
-				NameTemplate: "bar_{{.Arch}}",
-				Summary:      "test summary",
-				Description:  "test description",
-				Publish:      true,
-				Builds:       []string{"bar"},
+				NameTemplate:     "bar_{{.Arch}}",
+				Summary:          "test summary",
+				Description:      "test description",
+				Publish:          true,
+				Builds:           []string{"bar"},
+				ChannelTemplates: []string{"stable"},
 			},
 		},
 	})
@@ -85,18 +88,20 @@ func TestRunPipe(t *testing.T) {
 }
 
 func TestRunPipeInvalidNameTemplate(t *testing.T) {
-	var folder = t.TempDir()
-	var dist = filepath.Join(folder, "dist")
-	require.NoError(t, os.Mkdir(dist, 0755))
-	var ctx = context.New(config.Project{
+	testlib.CheckPath(t, "snapcraft")
+	folder := t.TempDir()
+	dist := filepath.Join(folder, "dist")
+	require.NoError(t, os.Mkdir(dist, 0o755))
+	ctx := context.New(config.Project{
 		ProjectName: "foo",
 		Dist:        dist,
 		Snapcrafts: []config.Snapcraft{
 			{
-				NameTemplate: "foo_{{.Arch}",
-				Summary:      "test summary",
-				Description:  "test description",
-				Builds:       []string{"foo"},
+				NameTemplate:     "foo_{{.Arch}",
+				Summary:          "test summary",
+				Description:      "test description",
+				Builds:           []string{"foo"},
+				ChannelTemplates: []string{"stable"},
 			},
 		},
 	})
@@ -107,21 +112,23 @@ func TestRunPipeInvalidNameTemplate(t *testing.T) {
 }
 
 func TestRunPipeWithName(t *testing.T) {
-	var folder = t.TempDir()
-	var dist = filepath.Join(folder, "dist")
-	require.NoError(t, os.Mkdir(dist, 0755))
-	var ctx = context.New(config.Project{
+	testlib.CheckPath(t, "snapcraft")
+	folder := t.TempDir()
+	dist := filepath.Join(folder, "dist")
+	require.NoError(t, os.Mkdir(dist, 0o755))
+	ctx := context.New(config.Project{
 		ProjectName: "testprojectname",
 		Dist:        dist,
 		Snapcrafts: []config.Snapcraft{
 			{
-				NameTemplate: "foo_{{.Arch}}",
-				Name:         "testsnapname",
-				Base:         "core18",
-				License:      "MIT",
-				Summary:      "test summary",
-				Description:  "test description",
-				Builds:       []string{"foo"},
+				NameTemplate:     "foo_{{.Arch}}",
+				Name:             "testsnapname",
+				Base:             "core18",
+				License:          "MIT",
+				Summary:          "test summary",
+				Description:      "test description",
+				Builds:           []string{"foo"},
+				ChannelTemplates: []string{"stable"},
 			},
 		},
 	})
@@ -129,7 +136,7 @@ func TestRunPipeWithName(t *testing.T) {
 	ctx.Version = "v1.2.3"
 	addBinaries(t, ctx, "foo", dist)
 	require.NoError(t, Pipe{}.Run(ctx))
-	yamlFile, err := ioutil.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
+	yamlFile, err := os.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
 	require.NoError(t, err)
 	var metadata Metadata
 	err = yaml.Unmarshal(yamlFile, &metadata)
@@ -141,10 +148,11 @@ func TestRunPipeWithName(t *testing.T) {
 }
 
 func TestRunPipeMetadata(t *testing.T) {
-	var folder = t.TempDir()
-	var dist = filepath.Join(folder, "dist")
-	require.NoError(t, os.Mkdir(dist, 0755))
-	var ctx = context.New(config.Project{
+	testlib.CheckPath(t, "snapcraft")
+	folder := t.TempDir()
+	dist := filepath.Join(folder, "dist")
+	require.NoError(t, os.Mkdir(dist, 0o755))
+	ctx := context.New(config.Project{
 		ProjectName: "testprojectname",
 		Dist:        dist,
 		Snapcrafts: []config.Snapcraft{
@@ -169,7 +177,8 @@ func TestRunPipeMetadata(t *testing.T) {
 						"read": []string{"$HOME/test"},
 					},
 				},
-				Builds: []string{"foo"},
+				Builds:           []string{"foo"},
+				ChannelTemplates: []string{"stable"},
 			},
 		},
 	})
@@ -177,7 +186,7 @@ func TestRunPipeMetadata(t *testing.T) {
 	ctx.Version = "v1.2.3"
 	addBinaries(t, ctx, "foo", dist)
 	require.NoError(t, Pipe{}.Run(ctx))
-	yamlFile, err := ioutil.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
+	yamlFile, err := os.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
 	require.NoError(t, err)
 	var metadata Metadata
 	err = yaml.Unmarshal(yamlFile, &metadata)
@@ -194,12 +203,12 @@ func TestRunPipeMetadata(t *testing.T) {
 }
 
 func TestNoSnapcraftInPath(t *testing.T) {
-	var path = os.Getenv("PATH")
+	path := os.Getenv("PATH")
 	defer func() {
 		require.NoError(t, os.Setenv("PATH", path))
 	}()
 	require.NoError(t, os.Setenv("PATH", ""))
-	var ctx = context.New(config.Project{
+	ctx := context.New(config.Project{
 		Snapcrafts: []config.Snapcraft{
 			{
 				Summary:     "dummy",
@@ -211,10 +220,11 @@ func TestNoSnapcraftInPath(t *testing.T) {
 }
 
 func TestRunNoArguments(t *testing.T) {
-	var folder = t.TempDir()
-	var dist = filepath.Join(folder, "dist")
-	require.NoError(t, os.Mkdir(dist, 0755))
-	var ctx = context.New(config.Project{
+	testlib.CheckPath(t, "snapcraft")
+	folder := t.TempDir()
+	dist := filepath.Join(folder, "dist")
+	require.NoError(t, os.Mkdir(dist, 0o755))
+	ctx := context.New(config.Project{
 		ProjectName: "testprojectname",
 		Dist:        dist,
 		Snapcrafts: []config.Snapcraft{
@@ -228,7 +238,8 @@ func TestRunNoArguments(t *testing.T) {
 						Args:   "",
 					},
 				},
-				Builds: []string{"foo"},
+				Builds:           []string{"foo"},
+				ChannelTemplates: []string{"stable"},
 			},
 		},
 	})
@@ -236,7 +247,7 @@ func TestRunNoArguments(t *testing.T) {
 	ctx.Version = "v1.2.3"
 	addBinaries(t, ctx, "foo", dist)
 	require.NoError(t, Pipe{}.Run(ctx))
-	yamlFile, err := ioutil.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
+	yamlFile, err := os.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
 	require.NoError(t, err)
 	var metadata Metadata
 	err = yaml.Unmarshal(yamlFile, &metadata)
@@ -245,10 +256,11 @@ func TestRunNoArguments(t *testing.T) {
 }
 
 func TestCompleter(t *testing.T) {
-	var folder = t.TempDir()
-	var dist = filepath.Join(folder, "dist")
-	require.NoError(t, os.Mkdir(dist, 0755))
-	var ctx = context.New(config.Project{
+	testlib.CheckPath(t, "snapcraft")
+	folder := t.TempDir()
+	dist := filepath.Join(folder, "dist")
+	require.NoError(t, os.Mkdir(dist, 0o755))
+	ctx := context.New(config.Project{
 		ProjectName: "testprojectname",
 		Dist:        dist,
 		Snapcrafts: []config.Snapcraft{
@@ -263,7 +275,8 @@ func TestCompleter(t *testing.T) {
 						Completer: "testdata/foo-completer.bash",
 					},
 				},
-				Builds: []string{"foo", "bar"},
+				Builds:           []string{"foo", "bar"},
+				ChannelTemplates: []string{"stable"},
 			},
 		},
 	})
@@ -272,7 +285,7 @@ func TestCompleter(t *testing.T) {
 	addBinaries(t, ctx, "foo", dist)
 	addBinaries(t, ctx, "bar", dist)
 	require.NoError(t, Pipe{}.Run(ctx))
-	yamlFile, err := ioutil.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
+	yamlFile, err := os.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
 	require.NoError(t, err)
 	var metadata Metadata
 	err = yaml.Unmarshal(yamlFile, &metadata)
@@ -282,10 +295,11 @@ func TestCompleter(t *testing.T) {
 }
 
 func TestCommand(t *testing.T) {
-	var folder = t.TempDir()
-	var dist = filepath.Join(folder, "dist")
-	require.NoError(t, os.Mkdir(dist, 0755))
-	var ctx = context.New(config.Project{
+	testlib.CheckPath(t, "snapcraft")
+	folder := t.TempDir()
+	dist := filepath.Join(folder, "dist")
+	require.NoError(t, os.Mkdir(dist, 0o755))
+	ctx := context.New(config.Project{
 		ProjectName: "testprojectname",
 		Dist:        dist,
 		Snapcrafts: []config.Snapcraft{
@@ -300,7 +314,8 @@ func TestCommand(t *testing.T) {
 						Command: "foo",
 					},
 				},
-				Builds: []string{"foo"},
+				Builds:           []string{"foo"},
+				ChannelTemplates: []string{"stable"},
 			},
 		},
 	})
@@ -308,7 +323,7 @@ func TestCommand(t *testing.T) {
 	ctx.Version = "v1.2.3"
 	addBinaries(t, ctx, "foo", dist)
 	require.NoError(t, Pipe{}.Run(ctx))
-	yamlFile, err := ioutil.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
+	yamlFile, err := os.ReadFile(filepath.Join(dist, "foo_amd64", "prime", "meta", "snap.yaml"))
 	require.NoError(t, err)
 	var metadata Metadata
 	err = yaml.Unmarshal(yamlFile, &metadata)
@@ -317,10 +332,11 @@ func TestCommand(t *testing.T) {
 }
 
 func TestExtraFile(t *testing.T) {
-	var folder = t.TempDir()
-	var dist = filepath.Join(folder, "dist")
-	require.NoError(t, os.Mkdir(dist, 0755))
-	var ctx = context.New(config.Project{
+	testlib.CheckPath(t, "snapcraft")
+	folder := t.TempDir()
+	dist := filepath.Join(folder, "dist")
+	require.NoError(t, os.Mkdir(dist, 0o755))
+	ctx := context.New(config.Project{
 		ProjectName: "testprojectname",
 		Dist:        dist,
 		Snapcrafts: []config.Snapcraft{
@@ -332,13 +348,14 @@ func TestExtraFile(t *testing.T) {
 					{
 						Source:      "testdata/extra-file.txt",
 						Destination: "a/b/c/extra-file.txt",
-						Mode:        0755,
+						Mode:        0o755,
 					},
 					{
 						Source: "testdata/extra-file-2.txt",
 					},
 				},
-				Builds: []string{"foo"},
+				Builds:           []string{"foo"},
+				ChannelTemplates: []string{"stable"},
 			},
 		},
 	})
@@ -347,23 +364,12 @@ func TestExtraFile(t *testing.T) {
 	addBinaries(t, ctx, "foo", dist)
 	require.NoError(t, Pipe{}.Run(ctx))
 
-	srcFile, err := os.Stat("testdata/extra-file.txt")
-	require.NoError(t, err)
-	destFile, err := os.Stat(filepath.Join(dist, "foo_amd64", "prime", "a", "b", "c", "extra-file.txt"))
-	require.NoError(t, err)
-	require.Equal(t, inode(srcFile), inode(destFile))
-	require.Equal(t, destFile.Mode(), os.FileMode(0755))
-
-	srcFile, err = os.Stat("testdata/extra-file-2.txt")
-	require.NoError(t, err)
-	destFileWithDefaults, err := os.Stat(filepath.Join(dist, "foo_amd64", "prime", "testdata", "extra-file-2.txt"))
-	require.NoError(t, err)
-	require.Equal(t, destFileWithDefaults.Mode(), os.FileMode(0644))
-	require.Equal(t, inode(srcFile), inode(destFileWithDefaults))
+	requireEqualFiles(t, "testdata/extra-file.txt", filepath.Join(dist, "foo_amd64", "prime", "a", "b", "c", "extra-file.txt"))
+	requireEqualFiles(t, "testdata/extra-file-2.txt", filepath.Join(dist, "foo_amd64", "prime", "testdata", "extra-file-2.txt"))
 }
 
 func TestDefault(t *testing.T) {
-	var ctx = context.New(config.Project{
+	ctx := context.New(config.Project{
 		Builds: []config.Build{
 			{
 				ID: "foo",
@@ -379,20 +385,23 @@ func TestDefault(t *testing.T) {
 }
 
 func TestPublish(t *testing.T) {
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	ctx.Artifacts.Add(&artifact.Artifact{
 		Name:   "mybin",
 		Path:   "nope.snap",
 		Goarch: "amd64",
 		Goos:   "linux",
 		Type:   artifact.PublishableSnapcraft,
+		Extra: map[string]interface{}{
+			releasesExtra: []string{"stable", "candidate"},
+		},
 	})
 	err := Pipe{}.Publish(ctx)
 	require.Contains(t, err.Error(), "failed to push nope.snap package")
 }
 
 func TestPublishSkip(t *testing.T) {
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	ctx.SkipPublish = true
 	ctx.Artifacts.Add(&artifact.Artifact{
 		Name:   "mybin",
@@ -400,39 +409,100 @@ func TestPublishSkip(t *testing.T) {
 		Goarch: "amd64",
 		Goos:   "linux",
 		Type:   artifact.PublishableSnapcraft,
+		Extra: map[string]interface{}{
+			releasesExtra: []string{"stable"},
+		},
 	})
 	testlib.AssertSkipped(t, Pipe{}.Publish(ctx))
 }
 
 func TestDefaultSet(t *testing.T) {
-	var ctx = context.New(config.Project{
+	ctx := context.New(config.Project{
 		Snapcrafts: []config.Snapcraft{
 			{
+				ID:           "devel",
 				NameTemplate: "foo",
+				Grade:        "devel",
+			},
+			{
+				ID:           "stable",
+				NameTemplate: "bar",
+				Grade:        "stable",
 			},
 		},
 	})
 	require.NoError(t, Pipe{}.Default(ctx))
 	require.Equal(t, "foo", ctx.Config.Snapcrafts[0].NameTemplate)
+	require.Equal(t, []string{"edge", "beta"}, ctx.Config.Snapcrafts[0].ChannelTemplates)
+	require.Equal(t, []string{"edge", "beta", "candidate", "stable"}, ctx.Config.Snapcrafts[1].ChannelTemplates)
+}
+
+func Test_processChannelsTemplates(t *testing.T) {
+	ctx := &context.Context{
+		Config: config.Project{
+			Builds: []config.Build{
+				{
+					ID: "default",
+				},
+			},
+			Snapcrafts: []config.Snapcraft{
+				{
+					Name: "mybin",
+					ChannelTemplates: []string{
+						"{{.Major}}.{{.Minor}}/stable",
+						"stable",
+					},
+				},
+			},
+		},
+	}
+
+	ctx.SkipPublish = true
+	ctx.Env = map[string]string{
+		"FOO": "123",
+	}
+	ctx.Version = "1.0.0"
+	ctx.Git = context.GitInfo{
+		CurrentTag: "v1.0.0",
+		Commit:     "a1b2c3d4",
+	}
+	ctx.Semver = context.Semver{
+		Major: 1,
+		Minor: 0,
+		Patch: 0,
+	}
+
+	require.NoError(t, Pipe{}.Default(ctx))
+
+	snap := ctx.Config.Snapcrafts[0]
+	require.Equal(t, "mybin", snap.Name)
+
+	channels, err := processChannelsTemplates(ctx, snap)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"1.0/stable",
+		"stable",
+	}, channels)
 }
 
 func addBinaries(t *testing.T, ctx *context.Context, name, dist string) {
 	t.Helper()
 	for _, goos := range []string{"linux", "darwin"} {
 		for _, goarch := range []string{"amd64", "386", "arm6"} {
-			var folder = goos + goarch
-			require.NoError(t, os.MkdirAll(filepath.Join(dist, folder), 0755))
-			var binPath = filepath.Join(dist, folder, name)
-			_, err := os.Create(binPath)
+			folder := goos + goarch
+			require.NoError(t, os.MkdirAll(filepath.Join(dist, folder), 0o755))
+			binPath := filepath.Join(dist, folder, name)
+			f, err := os.Create(binPath)
 			require.NoError(t, err)
+			require.NoError(t, f.Close())
 			ctx.Artifacts.Add(&artifact.Artifact{
-				Name:   name,
+				Name:   "subdir/" + name,
 				Path:   binPath,
 				Goarch: goarch,
 				Goos:   goos,
 				Type:   artifact.Binary,
 				Extra: map[string]interface{}{
-					"ID": name,
+					artifact.ExtraID: name,
 				},
 			})
 		}
@@ -440,7 +510,7 @@ func addBinaries(t *testing.T, ctx *context.Context, name, dist string) {
 }
 
 func TestSeveralSnapssWithTheSameID(t *testing.T) {
-	var ctx = &context.Context{
+	ctx := &context.Context{
 		Config: config.Project{
 			Snapcrafts: []config.Snapcraft{
 				{
@@ -476,7 +546,24 @@ func Test_isValidArch(t *testing.T) {
 	}
 }
 
-func inode(info os.FileInfo) uint64 {
-	stat := info.Sys().(*syscall.Stat_t)
-	return stat.Ino
+func TestSkip(t *testing.T) {
+	t.Run("skip", func(t *testing.T) {
+		require.True(t, Pipe{}.Skip(context.New(config.Project{})))
+	})
+
+	t.Run("dont skip", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Snapcrafts: []config.Snapcraft{
+				{},
+			},
+		})
+		require.False(t, Pipe{}.Skip(ctx))
+	})
+}
+
+func requireEqualFiles(tb testing.TB, a, b string) {
+	tb.Helper()
+	eq, err := gio.EqualFiles(a, b)
+	require.NoError(tb, err)
+	require.True(tb, eq, "%s != %s", a, b)
 }

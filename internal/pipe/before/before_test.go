@@ -1,13 +1,21 @@
 package before
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/apex/log"
 	"github.com/goreleaser/goreleaser/pkg/config"
 	"github.com/goreleaser/goreleaser/pkg/context"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	log.SetLevel(log.DebugLevel)
+	defer log.SetLevel(log.InfoLevel)
+	os.Exit(m.Run())
+}
 
 func TestDescription(t *testing.T) {
 	require.NotEmpty(t, Pipe{}.String())
@@ -60,7 +68,7 @@ func TestRunPipeFail(t *testing.T) {
 }
 
 func TestRunWithEnv(t *testing.T) {
-	var f = filepath.Join(t.TempDir(), "testfile")
+	f := filepath.Join(t.TempDir(), "testfile")
 	require.NoError(t, Pipe{}.Run(context.New(
 		config.Project{
 			Env: []string{
@@ -82,4 +90,19 @@ func TestInvalidTemplate(t *testing.T) {
 			},
 		},
 	)), `template: tmpl:1: unexpected "}" in operand`)
+}
+
+func TestSkip(t *testing.T) {
+	t.Run("skip", func(t *testing.T) {
+		require.True(t, Pipe{}.Skip(context.New(config.Project{})))
+	})
+
+	t.Run("dont skip", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Before: config.Before{
+				Hooks: []string{""},
+			},
+		})
+		require.False(t, Pipe{}.Skip(ctx))
+	})
 }

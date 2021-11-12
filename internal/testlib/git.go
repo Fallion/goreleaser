@@ -11,16 +11,26 @@ import (
 // GitInit inits a new git project.
 func GitInit(tb testing.TB) {
 	tb.Helper()
-	out, err := fakeGit("init", "-b", "main")
+	out, err := fakeGit("init")
 	require.NoError(tb, err)
 	require.Contains(tb, out, "Initialized empty Git repository")
 	require.NoError(tb, err)
+	GitCheckoutBranch(tb, "main")
+	_, _ = fakeGit("branch", "-D", "master")
 }
 
 // GitRemoteAdd adds the given url as remote.
 func GitRemoteAdd(tb testing.TB, url string) {
 	tb.Helper()
 	out, err := fakeGit("remote", "add", "origin", url)
+	require.NoError(tb, err)
+	require.Empty(tb, out)
+}
+
+// GitRemoteAddWithName adds the given url as remote with given name.
+func GitRemoteAddWithName(tb testing.TB, remote, url string) {
+	tb.Helper()
+	out, err := fakeGit("remote", "add", remote, url)
 	require.NoError(tb, err)
 	require.Empty(tb, out)
 }

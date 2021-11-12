@@ -3,6 +3,7 @@ package artifact
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -15,7 +16,7 @@ var _ fmt.Stringer = Type(0)
 
 func TestAdd(t *testing.T) {
 	var g errgroup.Group
-	var artifacts = New()
+	artifacts := New()
 	for _, a := range []*Artifact{
 		{
 			Name: "foo",
@@ -45,7 +46,7 @@ func TestAdd(t *testing.T) {
 }
 
 func TestFilter(t *testing.T) {
-	var data = []*Artifact{
+	data := []*Artifact{
 		{
 			Name:   "foo",
 			Goos:   "linux",
@@ -68,7 +69,7 @@ func TestFilter(t *testing.T) {
 			Type: Checksum,
 		},
 	}
-	var artifacts = New()
+	artifacts := New()
 	for _, a := range data {
 		artifacts.Add(a)
 	}
@@ -107,8 +108,61 @@ func TestFilter(t *testing.T) {
 	).List(), 2)
 }
 
+func TestRemove(t *testing.T) {
+	data := []*Artifact{
+		{
+			Name:   "foo",
+			Goos:   "linux",
+			Goarch: "arm",
+			Type:   Binary,
+		},
+		{
+			Name:   "universal",
+			Goos:   "darwin",
+			Goarch: "all",
+			Type:   UniversalBinary,
+		},
+		{
+			Name:   "bar",
+			Goarch: "amd64",
+		},
+		{
+			Name: "checks",
+			Type: Checksum,
+		},
+	}
+
+	t.Run("null filter", func(t *testing.T) {
+		artifacts := New()
+		for _, a := range data {
+			artifacts.Add(a)
+		}
+		require.NoError(t, artifacts.Remove(nil))
+		require.Len(t, artifacts.List(), len(data))
+	})
+
+	t.Run("removing", func(t *testing.T) {
+		artifacts := New()
+		for _, a := range data {
+			artifacts.Add(a)
+		}
+		require.NoError(t, artifacts.Remove(
+			Or(
+				ByType(Checksum),
+				ByType(UniversalBinary),
+				And(
+					ByGoos("linux"),
+					ByGoarch("arm"),
+				),
+			),
+		))
+
+		require.Len(t, artifacts.List(), 1)
+	})
+}
+
 func TestGroupByPlatform(t *testing.T) {
-	var data = []*Artifact{
+	data := []*Artifact{
 		{
 			Name:   "foo",
 			Goos:   "linux",
@@ -142,12 +196,12 @@ func TestGroupByPlatform(t *testing.T) {
 			Type: Checksum,
 		},
 	}
-	var artifacts = New()
+	artifacts := New()
 	for _, a := range data {
 		artifacts.Add(a)
 	}
 
-	var groups = artifacts.GroupByPlatform()
+	groups := artifacts.GroupByPlatform()
 	require.Len(t, groups["linuxamd64"], 2)
 	require.Len(t, groups["linuxarm6"], 1)
 	require.Len(t, groups["linuxmipssoftfloat"], 1)
@@ -155,11 +209,11 @@ func TestGroupByPlatform(t *testing.T) {
 }
 
 func TestChecksum(t *testing.T) {
-	var folder = t.TempDir()
-	var file = filepath.Join(folder, "subject")
-	require.NoError(t, ioutil.WriteFile(file, []byte("lorem ipsum"), 0644))
+	folder := t.TempDir()
+	file := filepath.Join(folder, "subject")
+	require.NoError(t, os.WriteFile(file, []byte("lorem ipsum"), 0o644))
 
-	var artifact = Artifact{
+	artifact := Artifact{
 		Path: file,
 	}
 
@@ -181,19 +235,20 @@ func TestChecksum(t *testing.T) {
 }
 
 func TestChecksumFileDoesntExist(t *testing.T) {
-	var artifact = Artifact{
-		Path: "/tmp/adasdasdas/asdasd/asdas",
+	file := filepath.Join(t.TempDir(), "nope")
+	artifact := Artifact{
+		Path: file,
 	}
 	sum, err := artifact.Checksum("sha1")
-	require.EqualError(t, err, `failed to checksum: open /tmp/adasdasdas/asdasd/asdas: no such file or directory`)
+	require.EqualError(t, err, fmt.Sprintf(`failed to checksum: open %s: no such file or directory`, file))
 	require.Empty(t, sum)
 }
 
 func TestInvalidAlgorithm(t *testing.T) {
 	f, err := ioutil.TempFile(t.TempDir(), "")
 	require.NoError(t, err)
-	t.Cleanup(func() { f.Close() })
-	var artifact = Artifact{
+	require.NoError(t, f.Close())
+	artifact := Artifact{
 		Path: f.Name(),
 	}
 	sum, err := artifact.Checksum("sha1ssss")
@@ -202,7 +257,7 @@ func TestInvalidAlgorithm(t *testing.T) {
 }
 
 func TestExtraOr(t *testing.T) {
-	var a = &Artifact{
+	a := &Artifact{
 		Extra: map[string]interface{}{
 			"Foo": "foo",
 		},
@@ -212,29 +267,29 @@ func TestExtraOr(t *testing.T) {
 }
 
 func TestByIDs(t *testing.T) {
-	var data = []*Artifact{
+	data := []*Artifact{
 		{
 			Name: "foo",
 			Extra: map[string]interface{}{
-				"ID": "foo",
+				ExtraID: "foo",
 			},
 		},
 		{
 			Name: "bar",
 			Extra: map[string]interface{}{
-				"ID": "bar",
+				ExtraID: "bar",
 			},
 		},
 		{
 			Name: "foobar",
 			Extra: map[string]interface{}{
-				"ID": "foo",
+				ExtraID: "foo",
 			},
 		},
 		{
 			Name: "check",
 			Extra: map[string]interface{}{
-				"ID": "check",
+				ExtraID: "check",
 			},
 		},
 		{
@@ -242,7 +297,7 @@ func TestByIDs(t *testing.T) {
 			Type: Checksum,
 		},
 	}
-	var artifacts = New()
+	artifacts := New()
 	for _, a := range data {
 		artifacts.Add(a)
 	}
@@ -253,33 +308,33 @@ func TestByIDs(t *testing.T) {
 }
 
 func TestByFormats(t *testing.T) {
-	var data = []*Artifact{
+	data := []*Artifact{
 		{
 			Name: "foo",
 			Extra: map[string]interface{}{
-				"Format": "zip",
+				ExtraFormat: "zip",
 			},
 		},
 		{
 			Name: "bar",
 			Extra: map[string]interface{}{
-				"Format": "tar.gz",
+				ExtraFormat: "tar.gz",
 			},
 		},
 		{
 			Name: "foobar",
 			Extra: map[string]interface{}{
-				"Format": "zip",
+				ExtraFormat: "zip",
 			},
 		},
 		{
 			Name: "bin",
 			Extra: map[string]interface{}{
-				"Format": "binary",
+				ExtraFormat: "binary",
 			},
 		},
 	}
-	var artifacts = New()
+	artifacts := New()
 	for _, a := range data {
 		artifacts.Add(a)
 	}
@@ -295,6 +350,7 @@ func TestTypeToString(t *testing.T) {
 		UploadableBinary,
 		UploadableFile,
 		Binary,
+		UniversalBinary,
 		LinuxPackage,
 		PublishableSnapcraft,
 		Snapcraft,
@@ -303,7 +359,12 @@ func TestTypeToString(t *testing.T) {
 		DockerManifest,
 		Checksum,
 		Signature,
+		Certificate,
 		UploadableSourceArchive,
+		BrewTap,
+		GoFishRig,
+		KrewPluginManifest,
+		ScoopManifest,
 	} {
 		t.Run(a.String(), func(t *testing.T) {
 			require.NotEqual(t, "unknown", a.String())
@@ -315,8 +376,8 @@ func TestTypeToString(t *testing.T) {
 }
 
 func TestPaths(t *testing.T) {
-	var paths = []string{"a/b", "b/c", "d/e", "f/g"}
-	var artifacts = New()
+	paths := []string{"a/b", "b/c", "d/e", "f/g"}
+	artifacts := New()
 	for _, a := range paths {
 		artifacts.Add(&Artifact{
 			Path: a,

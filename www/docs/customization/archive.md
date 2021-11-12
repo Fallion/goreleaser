@@ -1,6 +1,4 @@
----
-title: Archive
----
+# Archives
 
 The binaries built will be archived together with the `README` and `LICENSE` files into a
 `tar.gz` file. In the `archives` section you can customize the archive name,
@@ -20,7 +18,7 @@ archives:
     builds:
     - default
 
-    # Archive format. Valid options are `tar.gz`, `tar.xz`, `gz`, `zip` and `binary`.
+    # Archive format. Valid options are `tar.gz`, `tar.xz`, `tar`, `gz`, `zip` and `binary`.
     # If format is `binary`, no archives are created and the binaries are instead
     # uploaded directly.
     # Default is `tar.gz`.
@@ -60,8 +58,8 @@ archives:
         format: zip
 
     # Additional files/template/globs you want to add to the archive.
-    # Defaults are any files matching `LICENCE*`, `LICENSE*`,
-    # `README*` and `CHANGELOG*` (case-insensitive).
+    # Defaults are any files matching `LICENSE*`, `README*`, `CHANGELOG*`,
+    #  `license*`, `readme*` and `changelog*`.
     files:
       - LICENSE.txt
       - README_{{.Os}}.md
@@ -69,6 +67,21 @@ archives:
       - docs/*
       - design/*.png
       - templates/**/*
+      # a more complete example, check the globbing deep dive below
+      - src: '*.md'
+        dst: docs
+        # Strip parent folders when adding files to the archive.
+        # Default: false
+        strip_parent: true
+        # File info.
+        # Not all fields are supported by all formats available formats.
+        # Defaults to the file info of the actual file if not provided.
+        info:
+          owner: root
+          group: root
+          mode: 0644
+          # format is `time.RFC3339Nano`
+          mtime: 2008-01-02T15:04:05Z
 
     # Disables the binary count check.
     # Default: false
@@ -88,6 +101,43 @@ archives:
 !!! warning
     The `name_template` option will not reflect the filenames under the `dist` folder if `format` is `binary`.
     The template will be applied only where the binaries are uploaded (e.g. GitHub releases).
+
+## Deep diving into the globbing options
+
+We'll walk through what happens in each case using some examples.
+
+```yaml
+# ...
+files:
+
+# Adds `README.md` at the root of the archive:
+- README.md
+
+# Adds all `md` files to the root of the archive:
+- '*.md'
+
+# Adds all `md` files to the root of the archive:
+- src: '*.md'
+
+# Adds all `md` files in the current folder to a `docs` folder in the archive:
+- src: '*.md'
+  dst: docs
+
+# Recursively adds all `go` files to a `source` folder in the archive.
+# in this case, `cmd/myapp/main.go` will be added as `source/cmd/myapp/main.go`
+- src: '**/*.go'
+  dst: source
+
+# Recursively adds all `go` files to a `source` folder in the archive, stripping their parent folder.
+# In this case, `cmd/myapp/main.go` will be added as `source/main.go`:
+- src: '**/*.go'
+  dst: source
+  strip_parent: true
+# ...
+```
+
+!!! warning
+    `strip_parent` is only effective if `dst` is not empty.
 
 ## Packaging only the binaries
 

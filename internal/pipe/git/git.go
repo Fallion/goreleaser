@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
@@ -32,7 +33,7 @@ func (Pipe) Run(ctx *context.Context) error {
 		return err
 	}
 	ctx.Git = info
-	log.Infof("releasing %s, commit %s", info.CurrentTag, info.Commit)
+	log.WithField("commit", info.Commit).WithField("latest tag", info.CurrentTag).Info("building...")
 	ctx.Version = strings.TrimPrefix(ctx.Git.CurrentTag, "v")
 	return validate(ctx)
 }
@@ -82,10 +83,20 @@ func getGitInfo() (context.GitInfo, error) {
 	if err != nil {
 		return context.GitInfo{}, fmt.Errorf("couldn't get commit date: %w", err)
 	}
-	url, err := getURL()
+	gitURL, err := getURL()
 	if err != nil {
 		return context.GitInfo{}, fmt.Errorf("couldn't get remote URL: %w", err)
 	}
+
+	if strings.HasPrefix(gitURL, "https://") {
+		u, err := url.Parse(gitURL)
+		if err != nil {
+			return context.GitInfo{}, fmt.Errorf("couldn't parse remote URL: %w", err)
+		}
+		u.User = nil
+		gitURL = u.String()
+	}
+
 	tag, err := getTag()
 	if err != nil {
 		return context.GitInfo{
@@ -94,7 +105,7 @@ func getGitInfo() (context.GitInfo, error) {
 			FullCommit:  full,
 			ShortCommit: short,
 			CommitDate:  date,
-			URL:         url,
+			URL:         gitURL,
 			CurrentTag:  "v0.0.0",
 		}, ErrNoTag
 	}
@@ -105,7 +116,7 @@ func getGitInfo() (context.GitInfo, error) {
 		FullCommit:  full,
 		ShortCommit: short,
 		CommitDate:  date,
-		URL:         url,
+		URL:         gitURL,
 	}, nil
 }
 
@@ -119,16 +130,24 @@ func validate(ctx *context.Context) error {
 	if _, err := os.Stat(".git/shallow"); err == nil {
 		log.Warn("running against a shallow clone - check your CI documentation at https://goreleaser.com/ci")
 	}
-	out, err := git.Run("status", "--porcelain")
-	if strings.TrimSpace(out) != "" || err != nil {
-		return ErrDirty{status: out}
+	if err := CheckDirty(); err != nil {
+		return err
 	}
-	_, err = git.Clean(git.Run("describe", "--exact-match", "--tags", "--match", ctx.Git.CurrentTag))
+	_, err := git.Clean(git.Run("describe", "--exact-match", "--tags", "--match", ctx.Git.CurrentTag))
 	if err != nil {
 		return ErrWrongRef{
 			commit: ctx.Git.Commit,
 			tag:    ctx.Git.CurrentTag,
 		}
+	}
+	return nil
+}
+
+// CheckDirty returns an error if the current git repository is dirty.
+func CheckDirty() error {
+	out, err := git.Run("status", "--porcelain")
+	if strings.TrimSpace(out) != "" || err != nil {
+		return ErrDirty{status: out}
 	}
 	return nil
 }
@@ -169,7 +188,7 @@ func getTag() (string, error) {
 			return os.Getenv("GORELEASER_CURRENT_TAG"), nil
 		},
 		func() (string, error) {
-			return git.Clean(git.Run("tag", "--points-at", "HEAD", "--sort", "-version:creatordate"))
+			return git.Clean(git.Run("tag", "--points-at", "HEAD", "--sort", "-version:refname"))
 		},
 		func() (string, error) {
 			return git.Clean(git.Run("describe", "--tags", "--abbrev=0"))

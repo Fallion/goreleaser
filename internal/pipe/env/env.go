@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/apex/log"
+	"github.com/goreleaser/goreleaser/internal/tmpl"
 	"github.com/goreleaser/goreleaser/pkg/context"
 	homedir "github.com/mitchellh/go-homedir"
 )
@@ -28,7 +29,7 @@ func (Pipe) String() string {
 }
 
 func setDefaultTokenFiles(ctx *context.Context) {
-	var env = &ctx.Config.EnvFiles
+	env := &ctx.Config.EnvFiles
 	if env.GitHubToken == "" {
 		env.GitHubToken = "~/.config/goreleaser/github_token"
 	}
@@ -42,6 +43,19 @@ func setDefaultTokenFiles(ctx *context.Context) {
 
 // Run the pipe.
 func (Pipe) Run(ctx *context.Context) error {
+	templ := tmpl.New(ctx).WithEnvS(os.Environ())
+	tEnv := []string{}
+	for i := range ctx.Config.Env {
+		env, err := templ.Apply(ctx.Config.Env[i])
+		if err != nil {
+			return err
+		}
+		tEnv = append(tEnv, env)
+	}
+	for k, v := range context.ToEnv(tEnv) {
+		ctx.Env[k] = v
+	}
+
 	setDefaultTokenFiles(ctx)
 	githubToken, githubTokenErr := loadEnv("GITHUB_TOKEN", ctx.Config.EnvFiles.GitHubToken)
 	gitlabToken, gitlabTokenErr := loadEnv("GITLAB_TOKEN", ctx.Config.EnvFiles.GitLabToken)
@@ -68,12 +82,6 @@ func (Pipe) Run(ctx *context.Context) error {
 		return err
 	}
 
-	if githubToken != "" {
-		log.Debug("token type: github")
-		ctx.TokenType = context.TokenTypeGitHub
-		ctx.Token = githubToken
-	}
-
 	if gitlabToken != "" {
 		log.Debug("token type: gitlab")
 		ctx.TokenType = context.TokenTypeGitLab
@@ -84,6 +92,15 @@ func (Pipe) Run(ctx *context.Context) error {
 		log.Debug("token type: gitea")
 		ctx.TokenType = context.TokenTypeGitea
 		ctx.Token = giteaToken
+	}
+
+	if githubToken != "" {
+		log.Debug("token type: github")
+		ctx.Token = githubToken
+	}
+
+	if ctx.TokenType == "" {
+		ctx.TokenType = context.TokenTypeGitHub
 	}
 
 	return nil
@@ -128,6 +145,7 @@ func loadEnv(env, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer f.Close()
 	bts, _, err := bufio.NewReader(f).ReadLine()
 	return string(bts), err
 }

@@ -1,12 +1,8 @@
----
-title: Docker Manifest
----
+# Docker Manifests
 
-Since [v0.148.0](https://github.com/goreleaser/goreleaser/releases/tag/v0.148.0),
-GoReleaser supports building and pushing Docker multi-platform images through
-the `docker manifest` tool.
+GoReleaser can also create and push Docker multi-platform images using the `docker manifest` tool.
 
-For it to work, it [has to be enabled in the client configurations](https://github.com/docker/cli/blob/master/experimental/README.md).
+For it to work, it needs to be enabled in the [client's configuration](https://github.com/docker/cli/blob/master/experimental/README.md).
 
 Please make sure `docker manifest` works before opening issues.
 
@@ -28,6 +24,9 @@ options available:
 docker_manifests:
   # You can have multiple Docker manifests.
 -
+  # ID of the manifest, needed if you want to filter by it later on (e.g. on custom publishers).
+  id: myimg
+
   # Name template for the manifest.
   # Defaults to empty.
   name_template: foo/bar:{{ .Version }}
@@ -47,6 +46,26 @@ docker_manifests:
   # Defaults to empty.
   push_flags:
   - --insecure
+
+  # Skips the Docker manifest.
+  # If you set this to 'false' or 'auto' on your source Docker configs,
+  #  you'll probably want to do the same here.
+  #
+  # If set to 'auto', the manifest will not be created in case there is an
+  #  indicator of a prerelease in the tag, e.g. v1.0.0-rc1.
+  #
+  # Defaults to false.
+  skip_push: false
+
+  # Set the "backend" for the Docker manifest pipe.
+  # Valid options are: docker, podman
+  #
+  # Relevant notes:
+  # 1. podman is a GoReleaser Pro feature and is only available on Linux;
+  # 2. if you set podman here, the respective docker configs need to use podman too.
+  #
+  # Defaults to docker.
+  use: docker
 ```
 
 !!! tip
@@ -93,13 +112,13 @@ builds:
 dockers:
 - image_templates:
   - "foo/bar:{{ .Version }}-amd64"
-  use_buildx: true
+  use: buildx
   dockerfile: Dockerfile
   build_flag_templates:
   - "--platform=linux/amd64"
 - image_templates:
   - "foo/bar:{{ .Version }}-arm64v8"
-  use_buildx: true
+  use: buildx
   goarch: arm64
   dockerfile: Dockerfile
   build_flag_templates:
@@ -116,3 +135,22 @@ docker_manifests:
 
 That config will build the 2 Docker images defined, as well as the manifest,
 and push everything to Docker Hub.
+
+## Podman
+
+!!! success "GoReleaser Pro"
+    The podman backend is a [GoReleaser Pro feature](/pro/).
+
+You can use [`podman`](https://podman.io) instead of `docker` by setting `use` to `podman` on your config:
+
+```yaml
+# .goreleaser.yml
+docker_manifests:
+- name_template: foo/bar:{{ .Version }}
+  image_templates:
+  - foo/bar:{{ .Version }}-amd64
+  - foo/bar:{{ .Version }}-arm64v8
+  use: podman
+```
+
+Note that GoReleaser will not install Podman for you, nor change any of its configuration.

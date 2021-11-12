@@ -6,7 +6,8 @@ goreleaser
 debug.test
 snap.login
 site/
-www/docs/static/releases.json
+www/docs/static/releases*.json
 .vercel
 completions/
 .vscode/
+.task/

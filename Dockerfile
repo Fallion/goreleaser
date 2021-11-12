@@ -1,14 +1,16 @@
-FROM golang:1.16-alpine
+FROM golang:1.17.3-alpine
 
 RUN apk add --no-cache bash \
-                       curl \
-                       docker-cli \
-                       git \
-                       mercurial \
-                       make \
-                       build-base
+	curl \
+	docker-cli \
+	docker-cli-buildx \
+	git \
+	mercurial \
+	make \
+	build-base \
+	tini
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
 CMD [ "-h" ]
 
 COPY scripts/entrypoint.sh /entrypoint.sh

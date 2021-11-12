@@ -1,6 +1,4 @@
----
-title: Custom Publishers
----
+# Custom Publishers
 
 GoReleaser supports publishing artifacts by executing a custom publisher.
 
@@ -26,10 +24,22 @@ publishers:
 
 ### Environment
 
-Commands which are executed as custom publishers do not inherit any environment variables
-(unlike existing hooks) as a precaution to avoid leaking sensitive data accidentally
-and provide better control of the environment for each individual process
-where variable names may overlap unintentionally.
+Commands which are executed as custom publishers only inherit a subset of
+the system environment variables (unlike existing hooks) as a precaution to
+avoid leaking sensitive data accidentally and provide better control of the
+environment for each individual process where variable names may overlap
+unintentionally.
+
+Environment variables that are kept:
+
+- `HOME`
+- `USER`
+- `USERPROFILE`
+- `TMPDIR`
+- `TMP`
+- `TEMP`
+- `PATH`
+
 
 You can however use `.Env.NAME` templating syntax which enables
 more explicit inheritance.
@@ -39,6 +49,9 @@ more explicit inheritance.
   env:
     - SECRET_TOKEN={{ .Env.SECRET_TOKEN }}
 ```
+
+The publisher explicit environment variables take precedence over the
+inherited set of variables as well.
 
 ### Variables
 

@@ -6,15 +6,17 @@ import (
 	"strings"
 
 	"github.com/goreleaser/goreleaser/pkg/archive/gzip"
+	"github.com/goreleaser/goreleaser/pkg/archive/tar"
 	"github.com/goreleaser/goreleaser/pkg/archive/targz"
 	"github.com/goreleaser/goreleaser/pkg/archive/tarxz"
 	"github.com/goreleaser/goreleaser/pkg/archive/zip"
+	"github.com/goreleaser/goreleaser/pkg/config"
 )
 
 // Archive represents a compression archive files from disk can be written to.
 type Archive interface {
 	Close() error
-	Add(name, path string) error
+	Add(f config.File) error
 }
 
 // New archive.
@@ -30,6 +32,9 @@ func New(file *os.File) Archive {
 	}
 	if strings.HasSuffix(file.Name(), ".zip") {
 		return zip.New(file)
+	}
+	if strings.HasSuffix(file.Name(), ".tar") {
+		return tar.New(file)
 	}
 	return targz.New(file)
 }

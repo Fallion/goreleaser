@@ -1,6 +1,4 @@
----
-title: Scoop
----
+# Scoop Manifests
 
 After releasing to GitHub or GitLab, GoReleaser can generate and publish a
 _Scoop App Manifest_ into a repository that you have access to.
@@ -13,7 +11,7 @@ the commented example below:
 scoop:
   # Template for the url which is determined by the given Token (github or gitlab)
   # Default for github is "https://github.com/<repo_owner>/<repo_name>/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
-  # Default for gitlab is "https://gitlab.com/<repo_owner>/<repo_name>/uploads/{{ .ArtifactUploadHash }}/{{ .ArtifactName }}"
+  # Default for gitlab is "https://gitlab.com/<repo_owner>/<repo_name>/-/releases/{{ .Tag }}/downloads/{{ .ArtifactName }}"
   # Default for gitea is "https://gitea.com/<repo_owner>/<repo_name>/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
   url_template: "http://github.mycompany.com/foo/bar/releases/{{ .Tag }}/{{ .ArtifactName }}"
 
@@ -21,8 +19,15 @@ scoop:
   bucket:
     owner: user
     name: scoop-bucket
+    # Optionally a branch can be provided. If the branch does not exist, it
+    # will be created. If no branch is listed, the default branch will be used
+    branch: main
     # Optionally a token can be provided, if it differs from the token provided to GoReleaser
     token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+
+  # Folder inside the repository to put the scoop.
+  # Default is the root folder.
+  folder: Scoops
 
   # Git author used to commit to the repository.
   # Defaults are shown.

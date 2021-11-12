@@ -1,6 +1,4 @@
----
-title: Homebrew
----
+# Homebrew Taps
 
 After releasing to GitHub or GitLab, GoReleaser can generate and publish
 a _homebrew-tap_ recipe into a repository that you have access to.
@@ -11,11 +9,6 @@ You can check the
 and the
 [formula cookbook](https://github.com/Homebrew/brew/blob/master/docs/Formula-Cookbook.md)
 for more details.
-
-!!! warning
-    If you have multiple 32-bit arm versions in each `build` section, and
-    you do not specify any `ids` in the brew section, it will default to all
-    artifacts and GoReleaser will fail.
 
 ```yaml
 # .goreleaser.yml
@@ -40,16 +33,18 @@ brews:
     # same kind. We will probably unify this in the next major version like it is done with scoop.
 
     # GitHub/GitLab repository to push the formula to
-    # Gitea is not supported yet, but the support coming
     tap:
       owner: repo-owner
       name: homebrew-tap
+      # Optionally a branch can be provided. If the branch does not exist, it
+      # will be created. If no branch is listed, the default branch will be used
+      branch: main
       # Optionally a token can be provided, if it differs from the token provided to GoReleaser
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
 
     # Template for the url which is determined by the given Token (github or gitlab)
     # Default for github is "https://github.com/<repo_owner>/<repo_name>/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
-    # Default for gitlab is "https://gitlab.com/<repo_owner>/<repo_name>/uploads/{{ .ArtifactUploadHash }}/{{ .ArtifactName }}"
+    # Default for gitlab is "https://gitlab.com/<repo_owner>/<repo_name>/-/releases/{{ .Tag }}/downloads/{{ .ArtifactName }}"
     # Default for gitea is "https://gitea.com/<repo_owner>/<repo_name>/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
     url_template: "http://github.mycompany.com/foo/bar/releases/{{ .Tag }}/{{ .ArtifactName }}"
 
@@ -57,7 +52,7 @@ brews:
     # to implement the strategy and add it to your tap repository.
     # Example: https://docs.brew.sh/Formula-Cookbook#specifying-the-download-strategy-explicitly
     # Default is empty.
-    download_strategy: CurlDownloadStrategy.
+    download_strategy: CurlDownloadStrategy
 
     # Allows you to add a custom require_relative at the top of the formula template
     # Default is empty
@@ -68,6 +63,9 @@ brews:
     commit_author:
       name: goreleaserbot
       email: goreleaser@carlosbecker.com
+
+    # The project name and current git tag are used in the format string.
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
 
     # Folder inside the repository to put the formula.
     # Default is the root folder.
@@ -81,7 +79,7 @@ brews:
     # Default is empty.
     homepage: "https://example.com/"
 
-    # Your app's description.
+    # Template of your app's description.
     # Default is empty.
     description: "Software to create fast and easy drum rolls."
 
@@ -132,7 +130,7 @@ brews:
     install: |
       bin.install "program"
       ...
-      
+
     # Custom post_install script for brew.
     # Could be used to do any additional work after the "install" script
     # Default is empty.
@@ -178,7 +176,7 @@ class Program < Formula
   def install
     bin.install "program"
   end
-  
+
   def post_install
   	etc.install "app-config.conf"
   end
@@ -198,3 +196,7 @@ from one software to another.
 
 Our suggestion is to create a `my-app-head.rb` file on your tap following
 [homebrew's documentation](https://docs.brew.sh/Formula-Cookbook#unstable-versions-head).
+
+## Limitations
+
+- Only one `GOARM` build is allowed;

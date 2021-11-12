@@ -1,13 +1,13 @@
 package changelog
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/goreleaser/goreleaser/internal/client"
 	"github.com/goreleaser/goreleaser/internal/testlib"
 	"github.com/goreleaser/goreleaser/pkg/config"
 	"github.com/goreleaser/goreleaser/pkg/context"
@@ -18,63 +18,41 @@ func TestDescription(t *testing.T) {
 }
 
 func TestChangelogProvidedViaFlag(t *testing.T) {
-	var ctx = context.New(config.Project{})
-	ctx.ReleaseNotes = "testdata/changes.md"
+	ctx := context.New(config.Project{})
+	ctx.ReleaseNotesFile = "testdata/changes.md"
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Equal(t, "c0ff33 coffeee\n", ctx.ReleaseNotes)
 }
 
 func TestTemplatedChangelogProvidedViaFlag(t *testing.T) {
-	var ctx = context.New(config.Project{})
-	ctx.ReleaseNotes = "testdata/changes-templated.md"
+	ctx := context.New(config.Project{})
+	ctx.ReleaseNotesFile = "testdata/changes.md"
+	ctx.ReleaseNotesTmpl = "testdata/changes-templated.md"
 	ctx.Git.CurrentTag = "v0.0.1"
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Equal(t, "c0ff33 coffeee v0.0.1\n", ctx.ReleaseNotes)
 }
 
-func TestChangelogProvidedViaFlagAndSkipEnabled(t *testing.T) {
-	var ctx = context.New(config.Project{
-		Changelog: config.Changelog{
-			Skip: true,
-		},
-	})
-	ctx.ReleaseNotes = "testdata/changes.md"
-	testlib.AssertSkipped(t, Pipe{}.Run(ctx))
-	require.Equal(t, "c0ff33 coffeee\n", ctx.ReleaseNotes)
-}
-
 func TestChangelogProvidedViaFlagDoesntExist(t *testing.T) {
-	var ctx = context.New(config.Project{})
-	ctx.ReleaseNotes = "testdata/changes.nope"
+	ctx := context.New(config.Project{})
+	ctx.ReleaseNotesFile = "testdata/changes.nope"
 	require.EqualError(t, Pipe{}.Run(ctx), "open testdata/changes.nope: no such file or directory")
 }
 
-func TestChangelogSkip(t *testing.T) {
-	var ctx = context.New(config.Project{})
-	ctx.Config.Changelog.Skip = true
-	testlib.AssertSkipped(t, Pipe{}.Run(ctx))
-}
-
 func TestReleaseHeaderProvidedViaFlagDoesntExist(t *testing.T) {
-	var ctx = context.New(config.Project{})
-	ctx.ReleaseHeader = "testdata/header.nope"
+	ctx := context.New(config.Project{})
+	ctx.ReleaseHeaderFile = "testdata/header.nope"
 	require.EqualError(t, Pipe{}.Run(ctx), "open testdata/header.nope: no such file or directory")
 }
 
 func TestReleaseFooterProvidedViaFlagDoesntExist(t *testing.T) {
-	var ctx = context.New(config.Project{})
-	ctx.ReleaseFooter = "testdata/footer.nope"
+	ctx := context.New(config.Project{})
+	ctx.ReleaseFooterFile = "testdata/footer.nope"
 	require.EqualError(t, Pipe{}.Run(ctx), "open testdata/footer.nope: no such file or directory")
 }
 
-func TestSnapshot(t *testing.T) {
-	var ctx = context.New(config.Project{})
-	ctx.Snapshot = true
-	testlib.AssertSkipped(t, Pipe{}.Run(ctx))
-}
-
 func TestChangelog(t *testing.T) {
-	var folder = testlib.Mktmp(t)
+	folder := testlib.Mktmp(t)
 	testlib.GitInit(t)
 	testlib.GitCommit(t, "first")
 	testlib.GitTag(t, "v0.0.1")
@@ -87,7 +65,7 @@ func TestChangelog(t *testing.T) {
 	testlib.GitCommit(t, "Merge pull request #999 from goreleaser/some-branch")
 	testlib.GitCommit(t, "this is not a Merge pull request")
 	testlib.GitTag(t, "v0.0.2")
-	var ctx = context.New(config.Project{
+	ctx := context.New(config.Project{
 		Dist: folder,
 		Changelog: config.Changelog{
 			Filters: config.Filters{
@@ -111,13 +89,13 @@ func TestChangelog(t *testing.T) {
 	require.NotContains(t, ctx.ReleaseNotes, "cArs")
 	require.NotContains(t, ctx.ReleaseNotes, "from goreleaser/some-branch")
 
-	bts, err := ioutil.ReadFile(filepath.Join(folder, "CHANGELOG.md"))
+	bts, err := os.ReadFile(filepath.Join(folder, "CHANGELOG.md"))
 	require.NoError(t, err)
 	require.NotEmpty(t, string(bts))
 }
 
 func TestChangelogPreviousTagEnv(t *testing.T) {
-	var folder = testlib.Mktmp(t)
+	folder := testlib.Mktmp(t)
 	testlib.GitInit(t)
 	testlib.GitCommit(t, "first")
 	testlib.GitTag(t, "v0.0.1")
@@ -125,9 +103,12 @@ func TestChangelogPreviousTagEnv(t *testing.T) {
 	testlib.GitTag(t, "v0.0.2")
 	testlib.GitCommit(t, "third")
 	testlib.GitTag(t, "v0.0.3")
-	var ctx = context.New(config.Project{
-		Dist:      folder,
-		Changelog: config.Changelog{Filters: config.Filters{}},
+	ctx := context.New(config.Project{
+		Dist: folder,
+		Changelog: config.Changelog{
+			Use:     "git",
+			Filters: config.Filters{},
+		},
 	})
 	ctx.Git.CurrentTag = "v0.0.3"
 	require.NoError(t, os.Setenv("GORELEASER_PREVIOUS_TAG", "v0.0.1"))
@@ -140,7 +121,7 @@ func TestChangelogPreviousTagEnv(t *testing.T) {
 }
 
 func TestChangelogForGitlab(t *testing.T) {
-	var folder = testlib.Mktmp(t)
+	folder := testlib.Mktmp(t)
 	testlib.GitInit(t)
 	testlib.GitCommit(t, "first")
 	testlib.GitTag(t, "v0.0.1")
@@ -153,7 +134,7 @@ func TestChangelogForGitlab(t *testing.T) {
 	testlib.GitCommit(t, "Merge pull request #999 from goreleaser/some-branch")
 	testlib.GitCommit(t, "this is not a Merge pull request")
 	testlib.GitTag(t, "v0.0.2")
-	var ctx = context.New(config.Project{
+	ctx := context.New(config.Project{
 		Dist: folder,
 		Changelog: config.Changelog{
 			Filters: config.Filters{
@@ -178,7 +159,7 @@ func TestChangelogForGitlab(t *testing.T) {
 	require.NotContains(t, ctx.ReleaseNotes, "cArs")
 	require.NotContains(t, ctx.ReleaseNotes, "from goreleaser/some-branch")
 
-	bts, err := ioutil.ReadFile(filepath.Join(folder, "CHANGELOG.md"))
+	bts, err := os.ReadFile(filepath.Join(folder, "CHANGELOG.md"))
 	require.NoError(t, err)
 	require.NotEmpty(t, string(bts))
 }
@@ -192,7 +173,7 @@ func TestChangelogSort(t *testing.T) {
 	testlib.GitCommit(t, "a: commit")
 	testlib.GitCommit(t, "b: commit")
 	testlib.GitTag(t, "v1.0.0")
-	var ctx = context.New(config.Project{
+	ctx := context.New(config.Project{
 		Changelog: config.Changelog{},
 	})
 	ctx.Git.CurrentTag = "v1.0.0"
@@ -241,7 +222,7 @@ func TestChangelogSort(t *testing.T) {
 }
 
 func TestChangelogInvalidSort(t *testing.T) {
-	var ctx = context.New(config.Project{
+	ctx := context.New(config.Project{
 		Changelog: config.Changelog{
 			Sort: "dope",
 		},
@@ -252,7 +233,7 @@ func TestChangelogInvalidSort(t *testing.T) {
 func TestChangelogOfFirstRelease(t *testing.T) {
 	testlib.Mktmp(t)
 	testlib.GitInit(t)
-	var msgs = []string{
+	msgs := []string{
 		"initial commit",
 		"another one",
 		"one more",
@@ -262,7 +243,7 @@ func TestChangelogOfFirstRelease(t *testing.T) {
 		testlib.GitCommit(t, msg)
 	}
 	testlib.GitTag(t, "v0.0.1")
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	ctx.Git.CurrentTag = "v0.0.1"
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Contains(t, ctx.ReleaseNotes, "## Changelog")
@@ -278,7 +259,7 @@ func TestChangelogFilterInvalidRegex(t *testing.T) {
 	testlib.GitTag(t, "v0.0.3")
 	testlib.GitCommit(t, "commitzzz")
 	testlib.GitTag(t, "v0.0.4")
-	var ctx = context.New(config.Project{
+	ctx := context.New(config.Project{
 		Changelog: config.Changelog{
 			Filters: config.Filters{
 				Exclude: []string{
@@ -295,7 +276,7 @@ func TestChangelogNoTags(t *testing.T) {
 	testlib.Mktmp(t)
 	testlib.GitInit(t)
 	testlib.GitCommit(t, "first")
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	require.Error(t, Pipe{}.Run(ctx))
 	require.Empty(t, ctx.ReleaseNotes)
 }
@@ -303,7 +284,7 @@ func TestChangelogNoTags(t *testing.T) {
 func TestChangelogOnBranchWithSameNameAsTag(t *testing.T) {
 	testlib.Mktmp(t)
 	testlib.GitInit(t)
-	var msgs = []string{
+	msgs := []string{
 		"initial commit",
 		"another one",
 		"one more",
@@ -314,7 +295,7 @@ func TestChangelogOnBranchWithSameNameAsTag(t *testing.T) {
 	}
 	testlib.GitTag(t, "v0.0.1")
 	testlib.GitCheckoutBranch(t, "v0.0.1")
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	ctx.Git.CurrentTag = "v0.0.1"
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Contains(t, ctx.ReleaseNotes, "## Changelog")
@@ -326,10 +307,10 @@ func TestChangelogOnBranchWithSameNameAsTag(t *testing.T) {
 func TestChangeLogWithReleaseHeader(t *testing.T) {
 	current, err := os.Getwd()
 	require.NoError(t, err)
-	var tmpdir = testlib.Mktmp(t)
+	tmpdir := testlib.Mktmp(t)
 	require.NoError(t, os.Symlink(current+"/testdata", tmpdir+"/testdata"))
 	testlib.GitInit(t)
-	var msgs = []string{
+	msgs := []string{
 		"initial commit",
 		"another one",
 		"one more",
@@ -340,9 +321,9 @@ func TestChangeLogWithReleaseHeader(t *testing.T) {
 	}
 	testlib.GitTag(t, "v0.0.1")
 	testlib.GitCheckoutBranch(t, "v0.0.1")
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	ctx.Git.CurrentTag = "v0.0.1"
-	ctx.ReleaseHeader = "testdata/release-header.md"
+	ctx.ReleaseHeaderFile = "testdata/release-header.md"
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Contains(t, ctx.ReleaseNotes, "## Changelog")
 	require.Contains(t, ctx.ReleaseNotes, "test header")
@@ -351,10 +332,10 @@ func TestChangeLogWithReleaseHeader(t *testing.T) {
 func TestChangeLogWithTemplatedReleaseHeader(t *testing.T) {
 	current, err := os.Getwd()
 	require.NoError(t, err)
-	var tmpdir = testlib.Mktmp(t)
+	tmpdir := testlib.Mktmp(t)
 	require.NoError(t, os.Symlink(current+"/testdata", tmpdir+"/testdata"))
 	testlib.GitInit(t)
-	var msgs = []string{
+	msgs := []string{
 		"initial commit",
 		"another one",
 		"one more",
@@ -365,20 +346,21 @@ func TestChangeLogWithTemplatedReleaseHeader(t *testing.T) {
 	}
 	testlib.GitTag(t, "v0.0.1")
 	testlib.GitCheckoutBranch(t, "v0.0.1")
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	ctx.Git.CurrentTag = "v0.0.1"
-	ctx.ReleaseHeader = "testdata/release-header-templated.md"
+	ctx.ReleaseHeaderTmpl = "testdata/release-header-templated.md"
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Contains(t, ctx.ReleaseNotes, "## Changelog")
 	require.Contains(t, ctx.ReleaseNotes, "test header with tag v0.0.1")
 }
+
 func TestChangeLogWithReleaseFooter(t *testing.T) {
 	current, err := os.Getwd()
 	require.NoError(t, err)
-	var tmpdir = testlib.Mktmp(t)
+	tmpdir := testlib.Mktmp(t)
 	require.NoError(t, os.Symlink(current+"/testdata", tmpdir+"/testdata"))
 	testlib.GitInit(t)
-	var msgs = []string{
+	msgs := []string{
 		"initial commit",
 		"another one",
 		"one more",
@@ -389,9 +371,9 @@ func TestChangeLogWithReleaseFooter(t *testing.T) {
 	}
 	testlib.GitTag(t, "v0.0.1")
 	testlib.GitCheckoutBranch(t, "v0.0.1")
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	ctx.Git.CurrentTag = "v0.0.1"
-	ctx.ReleaseFooter = "testdata/release-footer.md"
+	ctx.ReleaseFooterFile = "testdata/release-footer.md"
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Contains(t, ctx.ReleaseNotes, "## Changelog")
 	require.Contains(t, ctx.ReleaseNotes, "test footer")
@@ -401,10 +383,10 @@ func TestChangeLogWithReleaseFooter(t *testing.T) {
 func TestChangeLogWithTemplatedReleaseFooter(t *testing.T) {
 	current, err := os.Getwd()
 	require.NoError(t, err)
-	var tmpdir = testlib.Mktmp(t)
+	tmpdir := testlib.Mktmp(t)
 	require.NoError(t, os.Symlink(current+"/testdata", tmpdir+"/testdata"))
 	testlib.GitInit(t)
-	var msgs = []string{
+	msgs := []string{
 		"initial commit",
 		"another one",
 		"one more",
@@ -415,9 +397,9 @@ func TestChangeLogWithTemplatedReleaseFooter(t *testing.T) {
 	}
 	testlib.GitTag(t, "v0.0.1")
 	testlib.GitCheckoutBranch(t, "v0.0.1")
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	ctx.Git.CurrentTag = "v0.0.1"
-	ctx.ReleaseFooter = "testdata/release-footer-templated.md"
+	ctx.ReleaseFooterTmpl = "testdata/release-footer-templated.md"
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Contains(t, ctx.ReleaseNotes, "## Changelog")
 	require.Contains(t, ctx.ReleaseNotes, "test footer with tag v0.0.1")
@@ -427,10 +409,10 @@ func TestChangeLogWithTemplatedReleaseFooter(t *testing.T) {
 func TestChangeLogWithoutReleaseFooter(t *testing.T) {
 	current, err := os.Getwd()
 	require.NoError(t, err)
-	var tmpdir = testlib.Mktmp(t)
+	tmpdir := testlib.Mktmp(t)
 	require.NoError(t, os.Symlink(current+"/testdata", tmpdir+"/testdata"))
 	testlib.GitInit(t)
-	var msgs = []string{
+	msgs := []string{
 		"initial commit",
 		"another one",
 		"one more",
@@ -441,9 +423,139 @@ func TestChangeLogWithoutReleaseFooter(t *testing.T) {
 	}
 	testlib.GitTag(t, "v0.0.1")
 	testlib.GitCheckoutBranch(t, "v0.0.1")
-	var ctx = context.New(config.Project{})
+	ctx := context.New(config.Project{})
 	ctx.Git.CurrentTag = "v0.0.1"
 	require.NoError(t, Pipe{}.Run(ctx))
 	require.Contains(t, ctx.ReleaseNotes, "## Changelog")
 	require.Equal(t, rune(ctx.ReleaseNotes[len(ctx.ReleaseNotes)-1]), '\n')
+}
+
+func TestGetChangelogGitHub(t *testing.T) {
+	ctx := context.New(config.Project{
+		Changelog: config.Changelog{
+			Use: "github",
+		},
+	})
+
+	expected := "c90f1085f255d0af0b055160bfff5ee40f47af79: fix: do not skip any defaults (#2521) (@caarlos0)"
+	mock := client.NewMock()
+	mock.Changes = expected
+	l := scmChangeloger{
+		client: mock,
+		repo: client.Repo{
+			Owner: "goreleaser",
+			Name:  "goreleaser",
+		},
+	}
+	log, err := l.Log(ctx, "v0.180.1", "v0.180.2")
+	require.NoError(t, err)
+	require.Equal(t, expected, log)
+}
+
+func TestGetChangelogGitHubNative(t *testing.T) {
+	ctx := context.New(config.Project{
+		Changelog: config.Changelog{
+			Use: "github-native",
+		},
+	})
+
+	expected := "**Full Changelog**: https://github.com/gorelease/goreleaser/compare/v0.180.1...v0.180.2"
+	mock := client.NewMock()
+	mock.ReleaseNotes = expected
+	l := githubNativeChangeloger{
+		client: mock,
+		repo: client.Repo{
+			Owner: "goreleaser",
+			Name:  "goreleaser",
+		},
+	}
+	log, err := l.Log(ctx, "v0.180.1", "v0.180.2")
+	require.NoError(t, err)
+	require.Equal(t, expected, log)
+}
+
+func TestGetChangeloger(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		c, err := getChangeloger(context.New(config.Project{}))
+		require.NoError(t, err)
+		require.IsType(t, c, gitChangeloger{})
+	})
+
+	t.Run("git", func(t *testing.T) {
+		c, err := getChangeloger(context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "git",
+			},
+		}))
+		require.NoError(t, err)
+		require.IsType(t, c, gitChangeloger{})
+	})
+
+	t.Run("github", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "github",
+			},
+		})
+		ctx.TokenType = context.TokenTypeGitHub
+		c, err := getChangeloger(ctx)
+		require.NoError(t, err)
+		require.IsType(t, c, &scmChangeloger{})
+	})
+
+	t.Run("github-native", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "github-native",
+			},
+		})
+		ctx.TokenType = context.TokenTypeGitHub
+		c, err := getChangeloger(ctx)
+		require.NoError(t, err)
+		require.IsType(t, c, &githubNativeChangeloger{})
+	})
+
+	t.Run("gitlab", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "gitlab",
+			},
+		})
+		ctx.TokenType = context.TokenTypeGitLab
+		c, err := getChangeloger(ctx)
+		require.NoError(t, err)
+		require.IsType(t, c, &scmChangeloger{})
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		c, err := getChangeloger(context.New(config.Project{
+			Changelog: config.Changelog{
+				Use: "nope",
+			},
+		}))
+		require.EqualError(t, err, `invalid changelog.use: "nope"`)
+		require.Nil(t, c)
+	})
+}
+
+func TestSkip(t *testing.T) {
+	t.Run("skip on snapshot", func(t *testing.T) {
+		ctx := context.New(config.Project{})
+		ctx.Snapshot = true
+		require.True(t, Pipe{}.Skip(ctx))
+	})
+
+	t.Run("skip", func(t *testing.T) {
+		ctx := context.New(config.Project{
+			Changelog: config.Changelog{
+				Skip: true,
+			},
+		})
+		require.True(t, Pipe{}.Skip(ctx))
+	})
+
+	t.Run("dont skip", func(t *testing.T) {
+		ctx := context.New(config.Project{})
+		require.False(t, Pipe{}.Skip(ctx))
+	})
 }
